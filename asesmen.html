@@ -1,0 +1,2788 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Asesmen.ku</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  /* =========================================================
+     KONFIGURASI — WAJIB DIISI
+     Tempel URL Web App Apps Script kamu di sini (lihat PANDUAN-SETUP.md)
+     ========================================================= */
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* =========================================================
+   1) ISI URL WEB APP APPS SCRIPT DI SINI
+   Contoh: "https://script.google.com/macros/s/AKfycb.../exec"
+   ========================================================= */
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxN-rzl2M3ksKRjvbZ68_UvVLe3hrhpcvge8dbQYsIjgtGCxiKhP5Gu4YOBNVsKN51c/exec";
+
+/* =========================================================
+   1b) SANDI GURU
+   Sandi guru TIDAK PERNAH ditulis di file ini sebagai teks — kalau ditulis
+   di sini, siapa pun bisa membacanya lewat "Lihat Sumber Halaman" (View Page
+   Source), bahkan tanpa membuka menu guru sama sekali. Sebagai gantinya:
+   guru mengetik sandinya di layar "Khusus Guru/Admin" (lihat
+   halamanGuruGerbang di bawah), sandi itu dikirim ke server untuk diperiksa
+   lewat aksi "cekSandi", dan HANYA kalau server bilang cocok, sandinya
+   disimpan sementara di variabel memori berikut — hilang lagi begitu
+   halaman ditutup/dimuat ulang. Sandi asli tetap hanya hidup di code.gs.
+   ========================================================= */
+let sandiGuruTersimpan = "";
+const AKSI_GURU_FE = ["cekSandi", "createAssessment", "listAssessments", "getResults", "setStatus", "uploadGambar", "getAssessmentDetail", "updateAssessment", "deleteAssessment", "backupSekarang", "aktifkanCadanganOtomatis", "matikanCadanganOtomatis", "statusCadanganOtomatis", "getAnalitikSoal"];
+
+/* =========================================================
+   2) STYLE (motif kertas ujian / LJK sekolah)
+   ========================================================= */
+const style = document.createElement("style");
+style.textContent = `
+  /* =========================================================
+     DESAIN VISUAL — SMP NEGERI 1 DLINGO (palet biru langit modern)
+     Nama variabel & class LAMA (--paper, --ink, --blue, .card, .btn, dst.)
+     sengaja DIPERTAHANKAN persis supaya seluruh logika JS di bawah (yang
+     sudah teruji: editor soal, anti-kecurangan, cadangan, dsb.) tidak perlu
+     disentuh sama sekali — yang berubah murni NILAI warna/radius/shadow-nya.
+     ========================================================= */
+  :root{
+    --paper:#F8FAFC; --paper-line:#CBD5E1; --ink:#0F172A; --ink-soft:#64748B;
+    --red:#EF4444; --red-soft:#FEF2F2; --gold:#EAB308; --gold-soft:#FEFCE8;
+    --green:#10B981; --green-soft:#ECFDF5; --card:#FFFFFF;
+    --navy2:#075985; --blue:#0284C7; --blue-soft:#F0F9FF; --blue-hover:#0369A1;
+    --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:24px;
+    --shadow-sm:0 1px 3px rgba(0,0,0,.05); --shadow-md:0 4px 14px rgba(15,23,42,.08);
+    --shadow-lg:0 12px 28px rgba(15,23,42,.12);
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; font-family:'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif;
+    color:var(--ink); background:var(--paper); min-height:100vh; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .disp{ font-family:'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif; font-weight:800; letter-spacing:-.01em; }
+  .mono{ font-family:'IBM Plex Mono',ui-monospace,monospace; }
+  .wrap{ max-width:760px; margin:0 auto; padding:0 18px 90px; }
+  .center{ min-height:calc(100vh - 132px); display:flex; align-items:center; justify-content:center; padding:24px 16px 60px; }
+  .card{ background:var(--card); border:1px solid var(--paper-line); border-radius:var(--radius-xl);
+    box-shadow:var(--shadow-md); padding:28px; }
+  .btn{ font-family:inherit; font-weight:600; border-radius:var(--radius-md); padding:.75em 1.3em; font-size:.925em;
+    border:1px solid var(--paper-line); cursor:pointer; background:var(--card); color:var(--ink); transition:all .15s ease; }
+  .btn:hover:not(:disabled){ border-color:var(--border-hover,#94A3B8); box-shadow:var(--shadow-sm); transform:translateY(-1px); }
+  .btn:active{ transform:translateY(1px); }
+  .btn-primary{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  .btn-primary:hover:not(:disabled){ background:var(--blue-hover); border-color:var(--blue-hover); }
+  .btn-red{ background:var(--blue); color:#fff; border-color:var(--blue); font-weight:700; }
+  .btn-red:hover:not(:disabled){ background:var(--blue-hover); border-color:var(--blue-hover); }
+  .btn-red-outline{ background:transparent; color:var(--red); border-color:var(--red); }
+  .btn:disabled{ opacity:.45; cursor:not-allowed; }
+  .btn-block{ width:100%; justify-content:center; }
+  input,select,textarea{
+    width:100%; border:1px solid var(--paper-line); background:white; border-radius:var(--radius-md);
+    padding:.7em .85em; font-family:inherit; color:var(--ink); outline:none; font-size:.95em;
+  }
+  input:focus,select:focus,textarea:focus{ border-color:var(--blue); box-shadow:0 0 0 4px rgba(2,132,199,.15); }
+  label.field{ display:block; font-size:.85em; font-weight:600; margin-bottom:.35em; color:var(--ink-soft); }
+  .stamp{ display:inline-flex; align-items:center; gap:.35em; font-size:.72em; font-weight:700;
+    letter-spacing:.04em; text-transform:uppercase; padding:.3em .8em; border-radius:99px; border:1.5px solid currentColor; }
+
+  /* =========================================================
+     HEADER PORTAL (baru) — logo + nama sekolah + tombol kontekstual,
+     tampil konsisten di semua halaman KECUALI saat murid sedang
+     mengerjakan ujian (punya .examhead sendiri yang lebih ringkas).
+     ========================================================= */
+  .header-wrap{ max-width:760px; margin:0 auto; padding:18px 18px 0; }
+  .app-header{ display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap;
+    background:var(--card); padding:14px 22px; border-radius:var(--radius-lg); border:1px solid var(--paper-line);
+    box-shadow:var(--shadow-sm); margin-bottom:22px; }
+  .brand-group{ display:flex; align-items:center; gap:14px; min-width:0; }
+  .school-logo-img{ height:50px; width:auto; max-width:58px; object-fit:contain; flex-shrink:0;
+    filter:drop-shadow(0 2px 4px rgba(0,0,0,.12)); }
+  .brand-text{ min-width:0; }
+  .brand-text h1{ font-family:'Plus Jakarta Sans',sans-serif; font-size:1.05em; font-weight:800; color:var(--ink);
+    line-height:1.2; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brand-text p{ font-size:.76em; color:var(--ink-soft); font-weight:600; margin-top:2px; }
+  @media(max-width:560px){ .brand-text p{ display:none; } .school-logo-img{ height:40px; } .app-header{ padding:10px 14px; } }
+  .chip-hapus{ border:none; background:transparent; cursor:pointer; padding:0; margin-left:1px;
+    font-size:1.15em; line-height:1; color:inherit; font-family:inherit; opacity:.6; }
+  .chip-hapus:hover{ opacity:1; color:var(--red); }
+  .opsi{ display:flex; align-items:center; gap:14px; padding:14px 10px; border-radius:var(--radius-md); cursor:pointer; background:transparent; }
+  .opsi:hover{ background:var(--blue-soft); }
+  .opsi.pilih{ background:var(--blue-soft); }
+  .opsi-letter{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:1.05em; width:1.2em; flex-shrink:0; color:var(--ink); }
+  .radio{ width:24px; height:24px; border-radius:50%; border:2px solid var(--paper-line); flex-shrink:0; background:#fff; position:relative; }
+  .radio.kotak{ border-radius:7px; }
+  .radio.pilih{ border-color:var(--blue); }
+  .radio.pilih::after{ content:""; position:absolute; inset:5px; border-radius:50%; background:var(--blue); }
+  .radio.kotak.pilih::after{ border-radius:2px; inset:4px; }
+  .opsi-teks{ font-size:.98em; line-height:1.4; display:block; max-width:100%; overflow-x:auto; }
+  .bulat{ width:2.1em; height:2.1em; border-radius:50%; border:2px solid var(--paper-line); display:flex;
+    align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-weight:700;
+    flex-shrink:0; background:white; color:var(--ink-soft); }
+  .bulat.pilih{ background:var(--blue); color:#fff; border-color:var(--blue); }
+  .bulat.kotak{ border-radius:8px; }
+  table{ border-collapse:collapse; width:100%; font-size:.85em; }
+  th{ font-family:'IBM Plex Mono',monospace; font-size:.68em; letter-spacing:.05em; text-transform:uppercase;
+    text-align:left; color:var(--ink-soft); border-bottom:2px solid var(--paper-line); padding:.7em .7em; background:var(--paper); white-space:nowrap; }
+  td{ border-bottom:1px solid var(--paper-line); padding:.7em .7em; white-space:nowrap; }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:1em; }
+  @media(max-width:560px){ .grid2{ grid-template-columns:1fr; } }
+  .row{ display:flex; gap:.6em; align-items:center; flex-wrap:wrap; }
+  .between{ display:flex; align-items:center; justify-content:space-between; gap:.8em; flex-wrap:wrap; }
+  .muted{ color:var(--ink-soft); }
+  .qcard{ background:var(--card); border:1px solid var(--paper-line); border-radius:var(--radius-lg); padding:22px; margin-bottom:16px;
+    box-shadow:var(--shadow-sm); overflow-x:hidden; }
+  .qcard p{ overflow-x:auto; max-width:100%; }
+  /* Rumus KaTeX panjang (pecahan bertingkat, matriks, dll) digulir horizontal
+     alih-alih memotong tampilan atau mendorong layar melebar — penting untuk
+     layar sempit HP karena murid mengerjakan dari ponsel masing-masing. */
+  .katex-display{ overflow-x:auto; overflow-y:hidden; padding:4px 0; margin:4px 0; }
+  .katex{ max-width:100%; }
+  .sticky{ position:sticky; top:0; z-index:5; background:var(--card); border-bottom:1.5px solid var(--paper-line);
+    padding:14px 18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.6em; }
+  .examhead{ position:sticky; top:0; z-index:5; background:linear-gradient(155deg,var(--blue-hover),var(--navy2));
+    color:#fff; border-radius:0 0 24px 24px; padding:20px 22px 26px; position:relative; }
+  .examhead-top{ display:flex; align-items:flex-start; gap:12px; padding-right:88px; }
+  .examhead-logo{ width:40px; height:40px; object-fit:contain; flex-shrink:0;
+    filter:drop-shadow(0 3px 6px rgba(0,0,0,.45)); }
+  .examhead-text{ min-width:0; flex:1; }
+  .examhead .eyebrow{ font-size:.72em; letter-spacing:.14em; text-transform:uppercase; font-weight:600;
+    color:rgba(255,255,255,.62); margin-bottom:2px; }
+  .examhead .mapel{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:1.15em; margin-bottom:8px; }
+  .examhead .siswa{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:1.4em; line-height:1.25;
+    text-transform:uppercase; letter-spacing:.01em; max-width:70%; }
+  .timer-chip{ position:absolute; top:20px; right:20px; background:var(--red); color:#fff;
+    font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:1.15em; padding:.5em 1em;
+    border-radius:99px; box-shadow:0 10px 22px -8px rgba(239,68,68,.55); }
+  .navseg{ display:flex; border:1px solid var(--paper-line); border-radius:var(--radius-lg); overflow:hidden; background:var(--card); }
+  .navseg button{ flex:1; border:none; background:transparent; padding:.85em .6em; font-family:inherit;
+    font-weight:600; color:var(--ink); cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:.9em; }
+  .navseg button:first-child{ border-right:1px solid var(--paper-line); }
+  .navseg button:disabled{ opacity:.35; cursor:not-allowed; }
+  .navseg button:not(:disabled):hover{ background:var(--paper); }
+  .palet-btn{ width:2.4em; height:2.4em; border-radius:var(--radius-sm); border:1px solid var(--paper-line); background:var(--card);
+    font-family:'IBM Plex Mono',monospace; font-weight:700; cursor:pointer; color:var(--ink-soft); }
+  .palet-btn.aktif{ background:var(--blue); border-color:var(--blue); color:#fff; }
+  .palet-btn.terjawab{ background:var(--blue-soft); border-color:#BAE6FD; color:var(--blue); }
+  .palet-btn.gagal{ background:var(--red-soft); border-color:var(--red); color:var(--red); }
+  .palet-btn.menyimpan{ background:var(--gold-soft); border-color:var(--gold); color:#7A5B00; }
+
+  /* Drawer navigasi nomor soal (menggantikan palet yang dulu selalu terlihat) */
+  .btn-soal-toggle{ background:rgba(255,255,255,.16); color:#fff; border:none; border-radius:10px;
+    padding:.5em .8em; font-family:inherit; font-weight:600; font-size:.82em; display:inline-flex;
+    align-items:center; gap:6px; cursor:pointer; flex-shrink:0; white-space:nowrap; }
+  .btn-soal-toggle:active{ transform:translateY(1px); }
+  .drawer-overlay{ position:fixed; inset:0; background:rgba(15,17,25,.55); z-index:40;
+    opacity:0; pointer-events:none; transition:opacity .22s ease; }
+  .drawer-overlay.terbuka{ opacity:1; pointer-events:auto; }
+  .drawer-soal{ position:fixed; top:0; left:0; height:100%; width:min(320px,85vw); background:#15171F;
+    color:#fff; z-index:41; transform:translateX(-100%); transition:transform .25s ease;
+    padding:20px 18px; overflow-y:auto; box-shadow:8px 0 28px rgba(0,0,0,.4); }
+  .drawer-soal.terbuka{ transform:translateX(0); }
+  .drawer-judul{ font-size:.78em; letter-spacing:.08em; text-transform:uppercase;
+    color:rgba(255,255,255,.55); font-weight:700; margin-bottom:12px; }
+  .drawer-legenda{ display:flex; align-items:center; gap:6px; font-size:.82em;
+    color:rgba(255,255,255,.85); margin-bottom:16px; flex-wrap:wrap; }
+  .legenda-dot{ width:14px; height:14px; border-radius:5px; background:transparent;
+    border:1.5px solid rgba(255,255,255,.4); display:inline-block; margin-left:12px; }
+  .legenda-dot:first-child{ margin-left:0; }
+  .legenda-dot.terjawab{ background:#34D399; border-color:#34D399; }
+  .drawer-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:8px; }
+  .drawer-grid .palet-btn{ width:100%; height:2.6em; background:rgba(255,255,255,.06);
+    border-color:rgba(255,255,255,.18); color:#fff; }
+  .drawer-grid .palet-btn.terjawab{ background:var(--blue-soft); border-color:#BAE6FD; color:var(--blue); }
+  .status-simpan{ display:inline-flex; align-items:center; gap:.4em; font-size:.75em; font-weight:600; padding:.25em .7em; border-radius:99px; }
+  .status-simpan.menyimpan{ background:var(--gold-soft); color:#7A5B00; }
+  .status-simpan.tersimpan{ background:var(--blue-soft); color:var(--blue); }
+  .status-simpan.gagal{ background:var(--red-soft); color:var(--red); cursor:pointer; border:1.5px solid var(--red); }
+  .steps{ display:flex; align-items:center; gap:8px; margin-bottom:22px; }
+  .step-dot{ width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-family:'IBM Plex Mono',monospace; font-weight:700; font-size:.85em; border:1.5px solid var(--paper-line); }
+  .step-dot.on{ background:var(--blue); color:white; border-color:var(--blue); }
+  .step-line{ flex:1; height:1px; background:var(--paper-line); }
+  .warn-box{ display:flex; gap:.6em; padding:14px 16px; border-radius:12px; background:var(--gold-soft); font-size:.85em; }
+  .mat-status-banner{ display:none; align-items:center; gap:10px; padding:10px 14px; border-radius:12px;
+    background:var(--gold-soft); font-size:.82em; margin-bottom:14px; line-height:1.4; }
+  .qi{ border:none; padding:.15em 0; background:transparent; }
+  .qi[readonly]{ color:var(--ink-soft); cursor:default; }
+  .fmt-toolbar{ display:flex; gap:4px; margin-bottom:4px; }
+  .fmt-btn{ font-family:inherit; width:26px; height:24px; line-height:1; padding:0; font-size:.82em;
+    border:1.5px solid var(--paper-line); border-radius:6px; background:var(--card); color:var(--ink);
+    cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+  .fmt-btn:hover{ background:var(--paper); }
+  .fmt-btn:active{ transform:translateY(1px); }
+  .fmt-btn.b{ font-weight:700; }
+  .fmt-btn.i{ font-style:italic; font-weight:600; }
+  .fmt-btn.u{ text-decoration:underline; font-weight:600; }
+  .mat-toolbar-row{ display:flex; gap:4px; flex-wrap:wrap; }
+  .fmt-btn.tpl{ width:auto; min-width:30px; padding:0 6px; font-family:'IBM Plex Mono',monospace; }
+  .fmt-btn.sym{ width:26px; font-family:'IBM Plex Mono',monospace; font-size:.9em; }
+  .fmt-btn.sigma{ font-family:'IBM Plex Mono',monospace; font-weight:700; }
+  .mat-panel{ display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:30;
+    flex-direction:column; gap:6px; background:var(--card); border:1.5px solid var(--paper-line);
+    border-radius:10px; padding:8px; box-shadow:0 14px 32px -18px rgba(22,35,78,.35); width:max-content; max-width:260px; }
+  .mat-panel.terbuka{ display:flex; }
+  .gambar-soal{ max-width:100%; max-height:380px; object-fit:contain; border-radius:10px; margin-bottom:10px; display:block; background:var(--paper); border:1px solid var(--paper-line); }
+  .gambar-editor{ max-width:100%; max-height:200px; object-fit:contain; border-radius:10px; display:block; border:1px solid var(--paper-line); }
+  .gambar-opsi-editor{ max-width:100%; max-height:130px; object-fit:contain; border-radius:8px; display:block; border:1px solid var(--paper-line); background:var(--paper); }
+  .gambar-opsi{ max-width:100%; max-height:220px; object-fit:contain; border-radius:8px; display:block; margin-top:6px; background:var(--paper); border:1px solid var(--paper-line); }
+  details summary{ cursor:pointer; font-size:.85em; font-weight:600; color:var(--ink-soft); }
+
+  /* =========================================================
+     GERBANG MASUK (beranda, gerbang guru, masuk murid) — gaya kartu
+     terpusat dengan lencana ikon, mirip referensi desain "login card".
+     ========================================================= */
+  .gerbang-card{ max-width:440px; width:100%; text-align:center; }
+  .gerbang-badge{ width:64px; height:64px; border-radius:18px; margin:0 auto 18px;
+    background:linear-gradient(135deg, var(--blue), var(--navy2)); display:flex; align-items:center;
+    justify-content:center; box-shadow:0 12px 26px -10px rgba(2,132,199,.5); }
+  .gerbang-badge svg{ width:30px; height:30px; }
+  .gerbang-logo{ width:88px; height:88px; object-fit:contain; margin:0 auto 18px; display:block;
+    filter:drop-shadow(0 10px 18px rgba(2,132,199,.3)); }
+  .gerbang-title{ font-size:1.7em; margin:0 0 6px; }
+  .gerbang-subtitle{ font-size:.9em; color:var(--ink-soft); margin:0 0 26px; line-height:1.5; }
+  .gerbang-back{ text-align:left; margin-bottom:16px; }
+  .gerbang-field{ position:relative; margin-bottom:14px; text-align:left; }
+  .gerbang-field svg{ position:absolute; left:14px; top:50%; transform:translateY(-50%); width:18px; height:18px; pointer-events:none; color:var(--ink-soft); }
+  .gerbang-field input{ padding-left:42px; }
+  .gerbang-role-list{ display:flex; flex-direction:column; gap:10px; margin-bottom:6px; }
+  .gerbang-role{ display:flex; align-items:center; gap:14px; width:100%; text-align:left; padding:14px 16px;
+    border-radius:14px; border:1.5px solid var(--paper-line); background:var(--card); cursor:pointer; font-family:inherit; }
+  .gerbang-role:hover{ border-color:var(--blue); }
+  .gerbang-role:active{ transform:translateY(1px); }
+  .gerbang-role-icon{ width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .gerbang-role-icon svg{ width:22px; height:22px; }
+  .gerbang-role-guru .gerbang-role-icon{ background:var(--gold-soft); color:#8A6100; }
+  .gerbang-role-murid .gerbang-role-icon{ background:var(--blue-soft); color:var(--blue); }
+  .gerbang-role-text{ flex:1; min-width:0; }
+  .gerbang-role-label{ font-weight:700; font-size:1.02em; }
+  .gerbang-role-desc{ font-size:.78em; color:var(--ink-soft); margin-top:1px; }
+  .gerbang-role-arrow{ color:var(--ink-soft); font-size:1.2em; flex-shrink:0; }
+  .gerbang-footnote{ text-align:center; font-size:.78em; color:var(--ink-soft); margin-top:22px; line-height:1.5; }
+  .gerbang-divider{ height:1px; background:var(--paper-line); margin:22px 0 18px; }
+  .gerbang-bottom-row{ display:flex; align-items:center; justify-content:center; gap:22px; }
+  .gerbang-bottom-sep{ color:var(--paper-line); font-size:.8em; }
+  .gerbang-bottom-link{ display:inline-flex; align-items:center; gap:7px; background:transparent; border:none;
+    cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; font-weight:600; font-size:.92em; color:var(--ink);
+    padding:6px 4px; }
+  .gerbang-bottom-link:hover{ color:var(--blue); }
+  .gerbang-bottom-link:active{ transform:translateY(1px); }
+  .gerbang-bottom-link svg{ width:18px; height:18px; }
+  .gerbang-bottom-link.guru svg{ color:#8A6100; }
+  .gerbang-bottom-link.murid svg{ color:var(--blue); }
+  .btn-icon svg{ width:15px; height:15px; display:block; }
+
+  /* Kotak panduan 3 langkah di halaman depan (di bawah tombol "Masuk Ujian") */
+  .guide-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:20px;
+    padding-top:18px; border-top:1px solid var(--paper-line); text-align:left; }
+  .guide-item{ font-size:.76em; color:var(--ink-soft); background:var(--paper); padding:10px 11px;
+    border-radius:var(--radius-sm); border:1px solid var(--paper-line); }
+  .guide-item strong{ display:block; color:var(--ink); margin-bottom:2px; font-size:.98em; }
+  @media(max-width:560px){ .guide-grid{ grid-template-columns:1fr; } }
+
+  /* Mode cetak (dipakai tombol "Ekspor PDF" di halaman Analitik Soal, lewat
+     window.print()) — sembunyikan chrome aplikasi (header, tombol, dsb.),
+     tampilkan HANYA konten bertanda .area-cetak dengan tampilan bersih. */
+  .no-cetak{ }
+  @media print {
+    body{ background:#fff !important; }
+    .header-wrap, .no-cetak{ display:none !important; }
+    .wrap{ max-width:100% !important; padding:0 !important; }
+    .card{ box-shadow:none !important; border:1px solid #ccc !important; break-inside:avoid; }
+    a[href]::after{ content:""; }
+  }
+`;
+document.head.appendChild(style);
+
+/* =========================================================
+   2e) IKON GARIS SEDERHANA (dipakai di layar gerbang masuk)
+   ========================================================= */
+// Logo sekolah (SMP N 1 Dlingo, Bantul) — disematkan langsung sebagai base64
+// supaya selalu tampil tanpa bergantung pada file/hosting terpisah.
+const LOGO_SEKOLAH_B64 = "data:image/png;base64,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";
+
+const IKON = {
+  cek: `<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
+  guru: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
+  murid: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1.5 3 3 6 3s6-1.5 6-3v-5"/></svg>`,
+  gembok: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`,
+  tiket: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9V6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v3a2 2 0 0 0 0 6v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-6Z"/><path d="M13 5v2M13 11v2M13 17v2"/></svg>`,
+  unduh: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+};
+function ikonEl(svg, kelas) { return el("span", { class: kelas, html: svg }); }
+
+/* =========================================================
+   3) HELPER
+   ========================================================= */
+const HURUF = ["A","B","C","D"];
+
+/* =========================================================
+   2b) NOTASI MATEMATIKA (KaTeX) — pemuatan tangguh + peringatan jelas
+   Guru menulis rumus di antara tanda $...$ (sebaris) atau $$...$$ (blok),
+   memakai kode LaTeX. Contoh: $\frac{1}{2}$, $\sqrt{16}$, $x^2$, $a_1$.
+
+   Pustaka KaTeX dimuat lewat JavaScript (bukan tag <script> statis) supaya
+   kalau gagal (mis. koneksi sekolah memblokir CDN, jaringan lambat), sistem
+   otomatis MENCOBA ULANG beberapa kali. Kalau akhirnya tetap gagal, murid
+   & guru diberi tahu lewat pesan jelas — bukan dibiarkan melihat kode
+   mentah seperti "$\frac{1}{2}$" tanpa penjelasan apa pun.
+   ========================================================= */
+let statusKatex = "memuat"; // "memuat" | "siap" | "gagal"
+const _dengarStatusKatex = [];
+function daftarDengarKatex(fn) { _dengarStatusKatex.push(fn); }
+function beriTahuStatusKatex(status) {
+  statusKatex = status;
+  _dengarStatusKatex.forEach((fn) => { try { fn(status); } catch (e) {} });
+}
+
+function muatSkripSekali(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Gagal memuat " + src));
+    document.head.appendChild(s);
+  });
+}
+function muatCssSekali(href) {
+  return new Promise((resolve, reject) => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.onload = () => resolve();
+    link.onerror = () => reject(new Error("Gagal memuat " + href));
+    document.head.appendChild(link);
+  });
+}
+
+async function muatKatexDenganRetry(percobaanMaks) {
+  const BASE = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9";
+  for (let percobaan = 1; percobaan <= percobaanMaks; percobaan++) {
+    try {
+      await Promise.all([
+        muatCssSekali(BASE + "/katex.min.css"),
+        muatSkripSekali(BASE + "/katex.min.js").then(() => muatSkripSekali(BASE + "/contrib/auto-render.min.js")),
+      ]);
+      if (typeof window.renderMathInElement === "function") {
+        beriTahuStatusKatex("siap");
+        return;
+      }
+      throw new Error("renderMathInElement tidak tersedia setelah dimuat");
+    } catch (err) {
+      if (percobaan === percobaanMaks) {
+        beriTahuStatusKatex("gagal");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 1200 * percobaan)); // jeda makin lama tiap percobaan
+    }
+  }
+}
+muatKatexDenganRetry(3);
+
+function renderMatematika(elemen) {
+  if (!elemen) return;
+  if (statusKatex === "siap") {
+    try {
+      window.renderMathInElement(elemen, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "\\[", right: "\\]", display: true },
+          { left: "$", right: "$", display: false },
+          { left: "\\(", right: "\\)", display: false },
+        ],
+        throwOnError: false,
+      });
+    } catch (e) { /* kalau gagal render, biarkan tampil sebagai teks biasa */ }
+    return;
+  }
+  if (statusKatex === "memuat") {
+    // begitu KaTeX siap, coba render ulang elemen ini sekali
+    daftarDengarKatex((status) => { if (status === "siap") renderMatematika(elemen); });
+  }
+  // statusKatex === "gagal": dibiarkan tampil sebagai teks biasa;
+  // penjelasan ke pengguna ditangani lewat banner (lihat elBannerKatex()).
+}
+
+const POLA_ADA_MATEMATIKA = /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^\$\n]+?\$|\\\([\s\S]*?\\\)/;
+
+function isiBannerKatex(banner) {
+  banner.innerHTML = "";
+  if (statusKatex !== "gagal") { banner.style.display = "none"; return; }
+  banner.style.display = "flex";
+  banner.appendChild(el("span", { style: "font-size:1.1em;" }, "⚠️"));
+  banner.appendChild(el("span", { style: "flex:1;" },
+    "Notasi matematika (rumus) gagal dimuat — kemungkinan koneksi internet bermasalah atau diblokir jaringan. " +
+    "Kalau ada soal yang menampilkan kode seperti ",
+    el("span", { class: "mono" }, "$\\frac{...}{...}$"),
+    " apa adanya, itu artinya rumusnya belum tampil rapi — bukan soal yang salah/rusak.",
+    " "
+  ));
+  banner.appendChild(el("button", { class: "btn", style: "padding:.25em .7em; font-size:.8em; flex-shrink:0;", onclick: () => location.reload() }, "Muat Ulang Halaman"));
+}
+function elBannerKatex() {
+  const banner = el("div", { class: "mat-status-banner", style: "display:none;" });
+  isiBannerKatex(banner);
+  daftarDengarKatex(() => isiBannerKatex(banner));
+  return banner;
+}
+
+/* =========================================================
+   2c) FORMAT TEKS (Tebal / Miring / Garis Bawah)
+   Guru bisa memakai tombol B/I/U, yang menyisipkan tanda:
+     **tebal**   →  cetak tebal
+     *miring*    →  cetak miring
+     __garis__   →  garis bawah
+   Tanda ini disimpan apa adanya sebagai teks biasa (sama seperti rumus
+   matematika), lalu baru diubah jadi tampilan tebal/miring/bergaris saat
+   dirender — baik di pratinjau guru maupun di layar murid. Bagian yang
+   berada di dalam rumus matematika ($...$ atau $$...$$) sengaja dilewati
+   supaya tidak bentrok dengan kode LaTeX (mis. garis bawah pada indeks).
+
+   TANDA DOLAR UNTUK MATA UANG (bukan rumus): kalau soal memuat nominal
+   dolar sungguhan (mis. harga "$50"), tanda dolar itu bisa keliru dianggap
+   pembuka/penutup rumus matematika oleh sistem — apalagi kalau ada LEBIH
+   dari satu tanda dolar dalam satu kalimat/paragraf. Tulis "\$" (backslash
+   lalu dolar) untuk tanda dolar sungguhan, supaya tidak dianggap rumus.
+   Contoh: "Harga baju itu \$50, celana \$75." akan tampil sebagai
+   "Harga baju itu $50, celana $75." apa adanya, tanpa dianggap rumus.
+   ========================================================= */
+function lolosHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/* =========================================================
+   1c) OPSI JAWABAN BERGAMBAR
+   Setiap opsi jawaban (A/B/C/D) sekarang bisa berupa teks, gambar, atau
+   keduanya — disimpan sebagai objek { teks, gambar, gambarFileId, gambarPublik }
+   memakai nama field yang SAMA seperti gambar soal, supaya bisa memakai ulang
+   fungsi upload gambar yang sudah ada tanpa duplikasi.
+   ========================================================= */
+function opsiKosong(teks) {
+  return { teks: teks || "", gambar: "", gambarFileId: "", gambarPublik: false };
+}
+// Merapikan opsi lama (masih berupa string polos, dari sebelum fitur ini ada)
+// menjadi bentuk objek yang konsisten — supaya asesmen lama tetap bisa dibuka/diedit.
+function normalisasiOpsiFE(o) {
+  if (typeof o === "string") return opsiKosong(o);
+  return { teks: o.teks || "", gambar: o.gambar || "", gambarFileId: o.gambarFileId || "", gambarPublik: !!o.gambarPublik };
+}
+function opsiKosongTeksDanGambar(o) {
+  return !(o && (o.teks || "").trim()) && !(o && o.gambar);
+}
+function pernyataanKosong() {
+  return { teks: "", kunci: true };
+}
+
+function formatTeksKeHtml(teks) {
+  if (!teks) return "";
+  // Tanda "\$" (backslash + dolar) berarti "dolar sungguhan" (mis. harga
+  // barang), BUKAN pembuka/penutup rumus matematika. Diganti dulu dengan
+  // penanda sementara (karakter khusus, hampir mustahil diketik guru) supaya
+  // tidak ikut cocok dengan pola pendeteksi rumus di bawah.
+  const PENANDA_DOLAR_LITERAL = "\uE000";
+  const teksAman = String(teks).split("\\$").join(PENANDA_DOLAR_LITERAL);
+  const polaMatematika = /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^\$\n]+?\$|\\\([\s\S]*?\\\)/g;
+  function formatBagianTeks(bagian) {
+    // Tiap tanda dolar literal ditaruh di elemen <span> TERSENDIRI (bukan
+    // sekadar karakter "$" polos). Ini penting: KaTeX melakukan pemindaian
+    // KEDUA secara independen atas seluruh teks yang sudah jadi (lewat
+    // renderMatematika), jadi kalau dua dolar literal cuma diganti balik
+    // jadi karakter "$" biasa, keduanya bisa kembali dianggap sepasang
+    // pembuka-penutup rumus oleh KaTeX — masalah yang sama persis muncul lagi.
+    // Dengan membungkusnya di elemen terpisah, dolar literal tidak pernah
+    // berada dalam satu node teks yang sama dengan dolar lain di sekitarnya.
+    const potongan = bagian.split(PENANDA_DOLAR_LITERAL);
+    return potongan.map((p, i) => {
+      let t = lolosHtml(p);
+      t = t.replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>");
+      t = t.replace(/\*([^*]+?)\*/g, "<em>$1</em>");
+      t = t.replace(/__([^_]+?)__/g, "<u>$1</u>");
+      t = t.replace(/\n/g, "<br>");
+      return i < potongan.length - 1 ? t + '<span class="dolar-literal">$</span>' : t;
+    }).join("");
+  }
+  let hasil = "", terakhir = 0, m;
+  while ((m = polaMatematika.exec(teksAman)) !== null) {
+    hasil += formatBagianTeks(teksAman.slice(terakhir, m.index));
+    hasil += lolosHtml(m[0].split(PENANDA_DOLAR_LITERAL).join("$"));
+    terakhir = polaMatematika.lastIndex;
+  }
+  hasil += formatBagianTeks(teksAman.slice(terakhir));
+  return hasil;
+}
+
+function terapkanFormat(inputEl, before, after, onSelesai) {
+  const nilai = inputEl.value;
+  const awal = inputEl.selectionStart ?? nilai.length;
+  const akhir = inputEl.selectionEnd ?? nilai.length;
+  const terpilih = nilai.slice(awal, akhir);
+  const sudahDibungkus = terpilih.length >= before.length + after.length &&
+    terpilih.startsWith(before) && terpilih.endsWith(after);
+  let baru, kursorAwal, kursorAkhir;
+  if (sudahDibungkus) {
+    const isi = terpilih.slice(before.length, terpilih.length - after.length);
+    baru = nilai.slice(0, awal) + isi + nilai.slice(akhir);
+    kursorAwal = awal; kursorAkhir = awal + isi.length;
+  } else {
+    baru = nilai.slice(0, awal) + before + terpilih + after + nilai.slice(akhir);
+    kursorAwal = awal + before.length;
+    kursorAkhir = kursorAwal + terpilih.length;
+  }
+  inputEl.value = baru;
+  inputEl.focus();
+  inputEl.setSelectionRange(kursorAwal, kursorAkhir);
+  onSelesai(baru);
+}
+
+/* =========================================================
+   2d) TOOLBAR FORMAT TEKS + SIMBOL/RUMUS MATEMATIKA (satu baris ringkas)
+   ---------------------------------------------------------
+   Sebelumnya toolbar format (B/I/U) dan toolbar matematika (4 templat +
+   15 simbol) masing-masing SELALU tampil sebagai baris tombolnya sendiri,
+   sehingga di bawah tiap soal/pilihan jawaban muncul 3 baris tombol
+   sekaligus — sangat memenuhi layar, apalagi saat ada 4 pilihan jawaban
+   sekaligus (lihat laporan tangkapan layar).
+
+   Sekarang digabung jadi SATU baris ringkas: [B] [I] [U] [Σ] — tombol Σ
+   membuka panel kecil mengambang berisi templat & simbol matematika,
+   hanya saat diklik, dan otomatis tertutup lagi setelah memilih sesuatu
+   atau saat mengklik di luar panel. Cara pakainya sama persis seperti
+   sebelumnya (klik simbol/templat untuk menyisipkannya) — yang berubah
+   hanya tampilannya jadi jauh lebih ringkas.
+   ========================================================= */
+let _panelMatematikaTerbuka = null;
+function tutupPanelMatematika() {
+  if (_panelMatematikaTerbuka) {
+    _panelMatematikaTerbuka.classList.remove("terbuka");
+    _panelMatematikaTerbuka = null;
+  }
+}
+document.addEventListener("click", tutupPanelMatematika);
+
+// Blok upload gambar yang bisa dipakai ulang — awalnya cuma untuk gambar soal,
+// sekarang dipakai juga untuk gambar per-opsi jawaban. "objek" adalah soal atau
+// opsi (keduanya punya field gambar/gambarFileId/gambarPublik yang sama).
+function buatBlokGambar(objek, opts) {
+  const status = el("p", { class: "muted", style: "font-size:.75em; margin:4px 0 0;" });
+  const preview = objek.gambar
+    ? el("div", { style: "margin-bottom:6px;" },
+        el("img", { class: opts.kelasGambar, src: objek.gambar }),
+        el("button", {
+          type: "button", class: "btn", style: "margin-top:4px; padding:.25em .55em; font-size:.72em; color:var(--red); border-color:var(--red);",
+          onclick: (e) => { e.preventDefault(); e.stopPropagation(); objek.gambar = ""; objek.gambarFileId = ""; opts.onSelesai(); },
+        }, "Hapus Gambar")
+      )
+    : el("span");
+  const input = el("input", { type: "file", accept: "image/*" });
+  input.addEventListener("click", (e) => e.stopPropagation());
+  input.addEventListener("change", async () => {
+    const file = input.files[0];
+    if (!file) return;
+    status.textContent = "Mengompres & mengunggah gambar…";
+    status.style.color = "var(--ink-soft)";
+    try {
+      const dataUrl = await resizeGambarKeDataUrl(file, 1000);
+      const hasil = await panggilAPI("uploadGambar", { dataUrl, namaFile: file.name });
+      if (!hasil.ok) { status.textContent = hasil.error || "Gagal mengunggah gambar."; status.style.color = "var(--red)"; return; }
+      objek.gambar = hasil.url;
+      objek.gambarFileId = hasil.fileId || "";
+      objek.gambarPublik = !!hasil.publik;
+      opts.onSelesai();
+    } catch (err) {
+      status.textContent = "Gagal memproses gambar: " + err;
+      status.style.color = "var(--red)";
+    }
+  });
+  const blok = el("div", { style: "margin-bottom:6px;" },
+    preview,
+    el("label", { class: "field", style: "font-size:.7em;" }, opts.labelTeks),
+    input,
+    status
+  );
+  blok.addEventListener("click", (e) => e.stopPropagation());
+  return blok;
+}
+
+function buatToolbarTeks(inputEl, onUbah) {
+  // Penting: tombol format ini HARUS menjaga fokus tetap di inputEl-nya sendiri.
+  // Kalau tidak dijaga, klik pada tombol bisa memindahkan fokus browser (atau
+  // "nyasar" akibat render ulang yang terjadi tepat saat berpindah opsi
+  // jawaban), sehingga selectionStart/End yang dibaca tidak lagi mewakili
+  // seleksi guru yang sebenarnya — hasilnya tanda **** bisa tersisip nyasar
+  // di ujung teks opsi yang SEBELUMNYA sedang diedit, bukan yang dimaksud.
+  function jagaFokus(e) { e.preventDefault(); }
+  function siapDipakai() { return document.activeElement === inputEl; }
+
+  function tombolFmt(label, kelas, judul, before, after) {
+    return el("button", {
+      type: "button", class: `fmt-btn ${kelas}`, title: judul,
+      onmousedown: jagaFokus,
+      onclick: (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!siapDipakai()) { inputEl.focus(); return; }
+        terapkanFormat(inputEl, before, after, onUbah);
+      }
+    }, label);
+  }
+  function tombolTpl(label, judul, aksi) {
+    return el("button", {
+      type: "button", class: "fmt-btn tpl", title: judul,
+      onmousedown: jagaFokus,
+      onclick: (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (!siapDipakai()) { inputEl.focus(); return; }
+        aksi(); tutupPanelMatematika();
+      }
+    }, label);
+  }
+  const panel = el("div", { class: "mat-panel" },
+    el("div", { class: "mat-toolbar-row" },
+      tombolTpl("a/b", "Sisipkan pecahan", () => sisipkanFrac(inputEl, onUbah)),
+      tombolTpl("√", "Sisipkan bentuk akar", () => sisipkanSqrt(inputEl, onUbah)),
+      tombolTpl("xⁿ", "Sisipkan pangkat", () => sisipkanPangkatIndeks(inputEl, "^", onUbah)),
+      tombolTpl("xₙ", "Sisipkan indeks bawah", () => sisipkanPangkatIndeks(inputEl, "_", onUbah))
+    ),
+    el("div", { class: "mat-toolbar-row" },
+      SIMBOL_MATEMATIKA.map((s) => el("button", {
+        type: "button", class: "fmt-btn sym", title: `Sisipkan ${s}`,
+        onmousedown: jagaFokus,
+        onclick: (e) => {
+          e.preventDefault(); e.stopPropagation();
+          if (!siapDipakai()) { inputEl.focus(); return; }
+          sisipkanSimbol(inputEl, s, onUbah); tutupPanelMatematika();
+        }
+      }, s))
+    )
+  );
+  panel.addEventListener("click", (e) => e.stopPropagation());
+  const tombolSigma = el("button", {
+    type: "button", class: "fmt-btn sigma", title: "Simbol & rumus matematika (pecahan, akar, pangkat, dll)",
+    onmousedown: jagaFokus,
+    onclick: (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const sudahTerbuka = panel.classList.contains("terbuka");
+      tutupPanelMatematika();
+      if (!sudahTerbuka) { panel.classList.add("terbuka"); _panelMatematikaTerbuka = panel; }
+    }
+  }, "Σ");
+  const toolbarWrap = el("div", { class: "fmt-toolbar", style: "position:relative;" },
+    tombolFmt("B", "b", "Tebal (bold)", "**", "**"),
+    tombolFmt("I", "i", "Miring (italic)", "*", "*"),
+    tombolFmt("U", "u", "Garis bawah (underline)", "__", "__"),
+    tombolSigma,
+    panel
+  );
+  // Jaga-jaga tambahan: kalau toolbar ini dipakai di dalam elemen yang bisa
+  // diklik (mis. <label> pemilih jawaban benar), klik di mana pun pada
+  // toolbar (termasuk celah antar tombol) TIDAK boleh ikut ditangkap oleh
+  // elemen pembungkus di luarnya.
+  toolbarWrap.addEventListener("click", (e) => e.stopPropagation());
+  toolbarWrap.addEventListener("mousedown", (e) => e.stopPropagation());
+  return toolbarWrap;
+}
+
+/* =========================================================
+   2d) TOOLBAR SISIP SIMBOL & TEMPLAT MATEMATIKA
+   Supaya guru tidak perlu menghafal kode LaTeX — tinggal klik.
+   Simbol (×, π, ≤, dst.) disisipkan sebagai karakter biasa (langsung
+   tampil tanpa perlu KaTeX). Templat (pecahan, akar, pangkat, indeks)
+   menyisipkan kode LaTeX di dalam tanda $...$ dengan bagian yang perlu
+   diisi otomatis tersorot, tinggal diketik ulang.
+   ========================================================= */
+function sisipkanSimbol(inputEl, simbol, onSelesai) {
+  const nilai = inputEl.value;
+  const awal = inputEl.selectionStart ?? nilai.length;
+  const akhir = inputEl.selectionEnd ?? nilai.length;
+  const baru = nilai.slice(0, awal) + simbol + nilai.slice(akhir);
+  inputEl.value = baru;
+  inputEl.focus();
+  const posisi = awal + simbol.length;
+  inputEl.setSelectionRange(posisi, posisi);
+  onSelesai(baru);
+}
+
+function sisipkanFrac(inputEl, onSelesai) {
+  const nilai = inputEl.value;
+  const awal = inputEl.selectionStart ?? nilai.length;
+  const akhir = inputEl.selectionEnd ?? nilai.length;
+  const pembilang = nilai.slice(awal, akhir) || "a";
+  const sisip = `$\\frac{${pembilang}}{b}$`;
+  inputEl.value = nilai.slice(0, awal) + sisip + nilai.slice(akhir);
+  inputEl.focus();
+  const mulaiSorot = awal + "$\\frac{".length;
+  inputEl.setSelectionRange(mulaiSorot, mulaiSorot + pembilang.length);
+  onSelesai(inputEl.value);
+}
+
+function sisipkanSqrt(inputEl, onSelesai) {
+  const nilai = inputEl.value;
+  const awal = inputEl.selectionStart ?? nilai.length;
+  const akhir = inputEl.selectionEnd ?? nilai.length;
+  const isi = nilai.slice(awal, akhir) || "a";
+  const sisip = `$\\sqrt{${isi}}$`;
+  inputEl.value = nilai.slice(0, awal) + sisip + nilai.slice(akhir);
+  inputEl.focus();
+  const mulaiSorot = awal + "$\\sqrt{".length;
+  inputEl.setSelectionRange(mulaiSorot, mulaiSorot + isi.length);
+  onSelesai(inputEl.value);
+}
+
+function sisipkanPangkatIndeks(inputEl, operator, onSelesai) {
+  const nilai = inputEl.value;
+  const awal = inputEl.selectionStart ?? nilai.length;
+  const akhir = inputEl.selectionEnd ?? nilai.length;
+  const terpilih = nilai.slice(awal, akhir);
+  let sisip, mulaiSorot, panjangSorot;
+  if (terpilih) {
+    sisip = `$${terpilih}${operator}{b}$`;
+    mulaiSorot = awal + `$${terpilih}${operator}{`.length;
+    panjangSorot = 1;
+  } else {
+    sisip = `$a${operator}{b}$`;
+    mulaiSorot = awal + 1;
+    panjangSorot = 1;
+  }
+  inputEl.value = nilai.slice(0, awal) + sisip + nilai.slice(akhir);
+  inputEl.focus();
+  inputEl.setSelectionRange(mulaiSorot, mulaiSorot + panjangSorot);
+  onSelesai(inputEl.value);
+}
+
+const SIMBOL_MATEMATIKA = ["×","÷","±","≤","≥","≠","≈","π","∞","°","²","³","½","Δ","∑"];
+
+async function panggilAPI(action, payload) {
+  const body = { action, ...payload };
+  if (AKSI_GURU_FE.includes(action) && body.sandi === undefined) body.sandi = sandiGuruTersimpan;
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+// Dipakai untuk menampilkan gambar soal MAUPUN gambar opsi ke murid/pratinjau.
+// ---------------------------------------------------------------------
+// URL cepat (drive.google.com/thumbnail) kadang gagal dimuat — paling sering
+// terjadi pada OPSI bergambar, karena satu soal bisa memicu beberapa
+// permintaan gambar ke Google Drive HAMPIR BERSAMAAN (tiap opsi + gambar
+// soal), berbeda dengan gambar soal yang biasanya cuma satu per soal.
+// Kalau itu terjadi, elemen <img> ini otomatis (lewat "onerror", TANPA guru
+// atau murid perlu melakukan apa pun) meminta ulang gambarnya ke server
+// sebagai base64 lewat aksi "ambilGambarBase64" — jalur ini selalu berhasil
+// selama filenya masih ada di Drive, terlepas dari kebijakan berbagi publik.
+function elGambarDenganCadangan(kelas, gambarObj, styleTambahan) {
+  if (!gambarObj || !gambarObj.gambar) return el("span");
+  const img = el("img", { class: kelas, src: gambarObj.gambar, style: styleTambahan || "" });
+  let sudahDicoba = false;
+  img.addEventListener("error", async () => {
+    if (sudahDicoba || !gambarObj.gambarFileId) {
+      img.replaceWith(el("p", { class: "muted", style: "font-size:.78em; font-style:italic;" }, "🖼️ Gambar gagal dimuat."));
+      return;
+    }
+    sudahDicoba = true;
+    try {
+      const hasil = await panggilAPI("ambilGambarBase64", { fileId: gambarObj.gambarFileId });
+      if (hasil.ok && hasil.dataUrl) img.src = hasil.dataUrl;
+      else img.replaceWith(el("p", { class: "muted", style: "font-size:.78em; font-style:italic;" }, "🖼️ Gambar gagal dimuat."));
+    } catch (err) {
+      img.replaceWith(el("p", { class: "muted", style: "font-size:.78em; font-style:italic;" }, "🖼️ Gambar gagal dimuat."));
+    }
+  });
+  return img;
+}
+
+function fmtWaktu(ms) {
+  if (ms < 0) ms = 0;
+  const t = Math.floor(ms / 1000);
+  const m = String(Math.floor(t / 60)).padStart(2, "0");
+  const s = String(t % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+/* =========================================================
+   DRAWER NAVIGASI NOMOR SOAL (menggantikan palet inline lama)
+   Dipakai bersama oleh layar ujian sesungguhnya & mode pratinjau.
+   Panggil elTombolTogglSoal() untuk tombol "☰ Soal" di header, dan
+   elDrawerNomorSoal({...}) untuk overlay + panelnya — keduanya perlu
+   di-appendChild langsung ke rootNode (BUKAN ke dalam "inner"/"wrap"),
+   supaya posisinya fixed menutupi seluruh layar dengan benar.
+   ========================================================= */
+function elTombolTogglSoal(onToggle) {
+  return el("button", { type: "button", class: "btn-soal-toggle", onclick: onToggle }, "☰ Soal");
+}
+
+function elDrawerNomorSoal({ jumlah, terjawabFn, statusFn, aktifIndex, onPilih, terbuka, onTutup, tombolBawah }) {
+  const overlay = el("div", { class: `drawer-overlay ${terbuka ? "terbuka" : ""}`, onclick: onTutup });
+  const grid = el("div", { class: "drawer-grid" });
+  for (let i = 0; i < jumlah; i++) {
+    const aktif = i === aktifIndex;
+    const dijawab = terjawabFn(i);
+    const st = statusFn ? statusFn(i) : null;
+    const kelas = aktif ? "aktif" : (st === "gagal" ? "gagal" : (st === "menyimpan" ? "menyimpan" : (dijawab ? "terjawab" : "")));
+    grid.appendChild(el("button", { type: "button", class: `palet-btn ${kelas}`, onclick: () => onPilih(i) }, String(i + 1)));
+  }
+  const drawer = el("div", { class: `drawer-soal ${terbuka ? "terbuka" : ""}` },
+    el("div", { class: "drawer-judul" }, `Nomor Soal (1–${jumlah})`),
+    el("div", { class: "drawer-legenda" },
+      el("span", { class: "legenda-dot terjawab" }), el("span", {}, "Terjawab"),
+      el("span", { class: "legenda-dot" }), el("span", {}, "Belum")
+    ),
+    grid,
+    tombolBawah ? el("div", { style: "margin-top:18px;" }, tombolBawah) : el("span")
+  );
+  return { overlay, drawer };
+}
+
+function masukLayarPenuh() {
+  const target = document.documentElement;
+  const fn = target.requestFullscreen || target.webkitRequestFullscreen || target.msRequestFullscreen;
+  if (fn) {
+    try { fn.call(target); } catch (e) { /* tidak didukung di perangkat ini, lanjut tanpa layar penuh */ }
+  }
+}
+function keluarLayarPenuh() {
+  const fn = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+  const sedangFull = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fn && sedangFull) {
+    try { fn.call(document); } catch (e) {}
+  }
+}
+
+function resizeGambarKeDataUrl(file, maxLebar) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width, height = img.height;
+        if (width > maxLebar) {
+          height = Math.round(height * (maxLebar / width));
+          width = maxLebar;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.onerror = () => reject(new Error("Gagal membaca gambar."));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("Gagal membaca file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function buatWatermarkDataUrl(teks) {
+  const canvas = document.createElement("canvas");
+  const lebar = 300, tinggi = 150;
+  canvas.width = lebar; canvas.height = tinggi;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, lebar, tinggi);
+  ctx.translate(lebar / 2, tinggi / 2);
+  ctx.rotate(-28 * Math.PI / 180);
+  ctx.font = "600 14px 'Plus Jakarta Sans', sans-serif";
+  ctx.fillStyle = "rgba(27,42,74,0.11)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(teks, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  Object.entries(props).forEach(([k, v]) => {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
+    else if (k === "html") node.innerHTML = v;
+    // "value" HARUS di-set sebagai PROPERTY (node.value = v), bukan lewat
+    // setAttribute. Untuk <input> keduanya kelihatan bekerja, tapi untuk
+    // <textarea> setAttribute("value", ...) TIDAK berpengaruh sama sekali ke
+    // isi yang ditampilkan — isi textarea hanya mengikuti property .value.
+    // Sebelumnya ini membuat kotak soal (satu-satunya elemen <textarea> yang
+    // diisi ulang dengan teks lama) tampak KOSONG setiap kali soal yang sudah
+    // ada dibuka untuk diedit, walau datanya (s.teks) sebenarnya masih ada.
+    else if (k === "value") node.value = v;
+    else if (v !== undefined && v !== null) node.setAttribute(k, v);
+  });
+  children.flat().forEach((c) => {
+    if (c === null || c === undefined) return;
+    node.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(c) : c);
+  });
+  return node;
+}
+
+const root = document.getElementById("root");
+const NAMA_SEKOLAH = "SMP NEGERI 1 DLINGO";
+const SUB_JUDUL_SEKOLAH = "Portal Computer Based Test & Asesmen Digital";
+
+/* Header portal (logo + nama sekolah + tombol kanan opsional) — dipakai
+   otomatis oleh render() di semua halaman KECUALI saat murid sedang
+   mengerjakan ujian (lihat opts.noHeader di bawah). */
+function elHeaderBar(rightNode) {
+  return el("div", { class: "app-header" },
+    el("div", { class: "brand-group" },
+      el("img", { src: LOGO_SEKOLAH_B64, alt: "Logo SMP N 1 Dlingo Bantul", class: "school-logo-img" }),
+      el("div", { class: "brand-text" },
+        el("h1", {}, NAMA_SEKOLAH),
+        el("p", {}, SUB_JUDUL_SEKOLAH)
+      )
+    ),
+    el("div", {}, rightNode || null)
+  );
+}
+
+// opts.noHeader = true  -> dipakai HANYA oleh layar murid sedang mengerjakan/
+//                          pratinjau ujian, yang sudah punya .examhead sendiri.
+// opts.headerRight      -> elemen tombol opsional di kanan header (mis. "Login
+//                          Guru" di halaman beranda paling depan).
+function render(node, opts = {}) {
+  root.innerHTML = "";
+  if (opts.noHeader) {
+    root.appendChild(node);
+    return;
+  }
+  root.appendChild(
+    el("div", {},
+      el("div", { class: "header-wrap" }, elHeaderBar(opts.headerRight)),
+      node
+    )
+  );
+}
+
+function cekKonfigurasi() {
+  if (APPS_SCRIPT_URL.indexOf("GANTI_DENGAN_URL") > -1) {
+    render(
+      el("div", { class: "center" },
+        el("div", { class: "card", style: "max-width:520px" },
+          el("h2", { class: "disp" }, "Belum Terhubung"),
+          el("p", { class: "muted" },
+            "Buka file ini dengan editor teks, cari baris APPS_SCRIPT_URL di bagian atas <script>, " +
+            "lalu ganti dengan URL Web App Apps Script kamu. Lihat PANDUAN-SETUP.md untuk langkahnya."
+          )
+        )
+      )
+    );
+    return false;
+  }
+  return true;
+}
+
+/* =========================================================
+   4) BERANDA
+   ========================================================= */
+function halamanBeranda() {
+  let assessment = null;
+  const kodeInput = el("input", {
+    class: "mono", maxlength: "6", placeholder: "KODE",
+    style: "text-align:center; font-size:1.15em; letter-spacing:.3em; text-transform:uppercase;",
+  });
+  const errNode = el("p", { style: "color:var(--red); font-size:.85em; margin-top:8px;" });
+  const bodyArea = el("div", {});
+
+  function gambarCari() {
+    bodyArea.innerHTML = "";
+    bodyArea.appendChild(el("div", { style: "margin-bottom:14px;" }, kodeInput));
+    bodyArea.appendChild(errNode);
+    const tombol = el("button", { class: "btn btn-red btn-block", onclick: () => cari() }, "Masuk Ujian →");
+    bodyArea.appendChild(tombol);
+    bodyArea.appendChild(el("div", { class: "guide-grid" },
+      el("div", { class: "guide-item" }, el("strong", {}, "1. Kode PIN"), "Dapatkan dari pengawas ujian."),
+      el("div", { class: "guide-item" }, el("strong", {}, "2. Isi NIS"), "Gunakan NIS resmi terdaftar."),
+      el("div", { class: "guide-item" }, el("strong", {}, "3. Otomatis"), "Jawaban tersimpan di server.")
+    ));
+
+    async function cari() {
+      const kode = kodeInput.value.trim().toUpperCase();
+      if (!kode) { errNode.textContent = "Isi kode terlebih dahulu."; return; }
+      errNode.textContent = "";
+      tombol.disabled = true; tombol.textContent = "Mencari…";
+      const hasil = await panggilAPI("getStudentAssessment", { code: kode });
+      tombol.disabled = false; tombol.textContent = "Masuk Ujian →";
+      if (!hasil.ok) { errNode.textContent = hasil.error; return; }
+      assessment = { ...hasil, code: kode };
+      gambarPilihNama();
+    }
+    kodeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") cari(); });
+  }
+
+  function gambarPilihNama() {
+    bodyArea.innerHTML = "";
+    bodyArea.appendChild(el("div", { class: "gerbang-back" }, el("button", { class: "btn", onclick: gambarCari }, "← Ganti Kode")));
+    bodyArea.appendChild(el("div", { style: "background:var(--paper); border-radius:5px; padding:12px 14px; margin-bottom:16px; text-align:left;" },
+      el("div", { class: "row", style: "gap:.5em; align-items:baseline;" },
+        el("div", { class: "disp", style: "font-size:1.2em;" }, assessment.mapel),
+        assessment.jenjang ? el("span", { class: "stamp", style: "color:var(--ink-soft);" }, `Kelas ${assessment.jenjang}`) : el("span")
+      ),
+      el("div", { class: "muted", style: "font-size:.8em;" }, `${assessment.soal.length} soal · ${assessment.waktuMenit} menit`)
+    ));
+
+    const kelasUnik = [...new Set(assessment.siswa.map(s => s.kelas))];
+
+    bodyArea.appendChild(el("label", { class: "field", style: "text-align:left;" }, "Pilih Kelas"));
+    const kelasSelect = el("select", { style: "margin-bottom:14px;" });
+    kelasUnik.forEach(k => kelasSelect.appendChild(el("option", { value: k }, k)));
+    bodyArea.appendChild(kelasSelect);
+
+    bodyArea.appendChild(el("label", { class: "field", style: "text-align:left;" }, "Pilih Namamu"));
+    const namaSelect = el("select", { style: "margin-bottom:18px;" });
+    function gambarNamaSelect() {
+      namaSelect.innerHTML = "";
+      assessment.siswa
+        .filter(s => s.kelas === kelasSelect.value)
+        .forEach(s => namaSelect.appendChild(el("option", { value: s.id }, s.nama)));
+    }
+    gambarNamaSelect();
+    kelasSelect.addEventListener("change", gambarNamaSelect);
+    bodyArea.appendChild(namaSelect);
+
+    bodyArea.appendChild(el("button", { class: "btn btn-red btn-block", onclick: () => { masukLayarPenuh(); halamanMuridKerjakan(assessment, namaSelect.value); } }, "Mulai Mengerjakan"));
+  }
+
+  gambarCari();
+
+  render(
+    el("div", { class: "center" },
+      el("div", { class: "card gerbang-card" },
+        el("img", { src: LOGO_SEKOLAH_B64, alt: "Logo SMP N 1 Dlingo Bantul", class: "gerbang-logo" }),
+        el("h2", { class: "disp gerbang-title" }, "Portal Asesmen Siswa"),
+        el("p", { class: "gerbang-subtitle" }, "Masukkan Kode PIN Ujian dari Pengawas / Guru."),
+        bodyArea
+      )
+    ),
+    { headerRight: el("button", { class: "btn", style: "font-size:.85em; padding:8px 14px;", onclick: () => halamanGuruGerbang() }, "🔒 Login Guru") }
+  );
+}
+
+/* =========================================================
+   5) GURU — GERBANG SANDI (mengunci menu guru dari murid)
+   ========================================================= */
+function halamanGuruGerbang() {
+  if (sandiGuruTersimpan) { halamanGuruBeranda(); return; }
+
+  const sandiInput = el("input", { type: "password", class: "mono", placeholder: "Masukkan sandi guru…" });
+  const errNode = el("p", { style: "color:var(--red); font-size:.85em; margin-top:10px;" });
+  const btnMasuk = el("button", { class: "btn btn-red btn-block", style: "margin-top:4px;", onclick: () => cobaMasuk() }, "Masuk");
+
+  async function cobaMasuk() {
+    const sandi = sandiInput.value;
+    errNode.textContent = "";
+    if (!sandi) { errNode.textContent = "Isi sandi terlebih dahulu."; return; }
+    btnMasuk.disabled = true;
+    btnMasuk.textContent = "Memeriksa…";
+    try {
+      const hasil = await panggilAPI("cekSandi", { sandi });
+      if (hasil.ok) {
+        sandiGuruTersimpan = sandi;
+        halamanGuruBeranda();
+        return;
+      } else {
+        errNode.textContent = hasil.error || "Sandi salah.";
+      }
+    } catch (err) {
+      errNode.textContent = "Gagal memeriksa sandi. Periksa koneksi internet.";
+    }
+    btnMasuk.disabled = false;
+    btnMasuk.textContent = "Masuk";
+  }
+  sandiInput.addEventListener("keydown", (e) => { if (e.key === "Enter") cobaMasuk(); });
+
+  render(
+    el("div", { class: "center" },
+      el("div", { class: "card gerbang-card" },
+        el("div", { class: "gerbang-back" }, el("button", { class: "btn", onclick: halamanBeranda }, "← Kembali")),
+        ikonEl(IKON.gembok, "gerbang-badge"),
+        el("h2", { class: "disp gerbang-title" }, "Khusus Guru / Admin"),
+        el("p", { class: "gerbang-subtitle" }, "Menu ini terkunci. Masukkan sandi guru untuk melanjutkan."),
+        el("div", { class: "gerbang-field" }, ikonEl(IKON.gembok, ""), sandiInput),
+        btnMasuk,
+        errNode
+      )
+    )
+  );
+}
+
+/* =========================================================
+   6) GURU — BERANDA (daftar asesmen tersimpan di Spreadsheet)
+   ========================================================= */
+function halamanGuruBeranda() {
+  if (!sandiGuruTersimpan) { halamanGuruGerbang(); return; }
+  const kodeInput = el("input", { class: "mono", placeholder: "Masukkan kode asesmen…", maxlength: "6" });
+  const daftarArea = el("div", {}, el("p", { class: "muted" }, "Memuat asesmen tersimpan…"));
+  const cadanganArea = el("div", {}, el("p", { class: "muted", style: "font-size:.85em;" }, "Memuat status cadangan…"));
+
+  render(
+    el("div", { class: "wrap" },
+      el("button", { class: "btn", style: "margin-bottom:20px;", onclick: halamanBeranda }, "← Kembali"),
+      el("div", { class: "between", style: "margin-bottom:18px; flex-wrap:wrap; gap:10px;" },
+        el("div", {},
+          el("h2", { class: "disp", style: "margin:0;" }, "Asesmen Saya"),
+          el("p", { class: "muted", style: "font-size:.85em;" }, "Tersimpan permanen di Google Spreadsheet — tetap ada meski kamu membuka ulang halaman ini.")
+        ),
+        el("button", { class: "btn btn-red", onclick: () => halamanBuatAsesmen() }, "+ Buat Asesmen Baru")
+      ),
+      daftarArea,
+      el("div", { class: "card", style: "margin-top:18px;" },
+        el("h3", { class: "disp", style: "margin-top:0; font-size:1.1em;" }, "Buka dengan Kode"),
+        el("p", { class: "muted", style: "font-size:.85em; margin-bottom:12px;" }, "Kalau asesmen tidak muncul di daftar (mis. dibuat dari Spreadsheet lain), masukkan kodenya di sini."),
+        el("div", { class: "row" },
+          kodeInput,
+          el("button", { class: "btn btn-primary", onclick: async () => {
+            const kode = kodeInput.value.trim().toUpperCase();
+            if (kode) halamanDashboard(kode);
+          }}, "Buka Dashboard")
+        )
+      ),
+      el("div", { class: "card", style: "margin-top:18px;" },
+        el("h3", { class: "disp", style: "margin-top:0; font-size:1.1em;" }, "Cadangan Data"),
+        el("p", { class: "muted", style: "font-size:.85em; margin-bottom:12px;" },
+          "Seluruh soal, kunci jawaban, dan hasil siswa hanya hidup di satu Spreadsheet ini — kalau ada yang tidak sengaja terhapus atau rusak, cadangan ini jadi jalan pulihnya. Setiap cadangan adalah salinan LENGKAP Spreadsheet, disimpan di folder Drive terpisah \u201cAsesmen.ku - Cadangan\u201d. Cadangan lama dibuang otomatis, menyisakan 14 salinan terbaru."
+        ),
+        cadanganArea
+      )
+    )
+  );
+
+  function gambarCadangan(status) {
+    cadanganArea.innerHTML = "";
+    const waktuTeks = status.terakhirWaktu
+      ? new Date(status.terakhirWaktu).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })
+      : "Belum pernah ada cadangan.";
+    cadanganArea.appendChild(el("div", { class: "row", style: "gap:.5em; align-items:baseline; flex-wrap:wrap; margin-bottom:10px;" },
+      el("span", { class: "stamp", style: `color:${status.aktif ? "var(--green)" : "var(--ink-soft)"}` }, status.aktif ? "Cadangan Otomatis: Aktif (tiap jam 02:00)" : "Cadangan Otomatis: Nonaktif"),
+    ));
+    cadanganArea.appendChild(el("p", { class: "muted", style: "font-size:.8em; margin-bottom:14px;" }, `Cadangan terakhir: ${waktuTeks}${status.terakhirNama ? ` — ${status.terakhirNama}` : ""}`));
+
+    const btnBackupNow = el("button", { class: "btn btn-primary", onclick: async () => {
+      btnBackupNow.disabled = true; btnBackupNow.textContent = "Membuat cadangan…";
+      const hasil = await panggilAPI("backupSekarang", {});
+      btnBackupNow.disabled = false; btnBackupNow.textContent = "Cadangkan Sekarang";
+      if (!hasil.ok) { alert(hasil.error || "Gagal membuat cadangan."); return; }
+      muatStatusCadangan();
+    }}, "Cadangkan Sekarang");
+
+    const btnToggle = el("button", { class: "btn", onclick: async () => {
+      btnToggle.disabled = true;
+      const aksi = status.aktif ? "matikanCadanganOtomatis" : "aktifkanCadanganOtomatis";
+      const hasil = await panggilAPI(aksi, {});
+      btnToggle.disabled = false;
+      if (!hasil.ok) { alert(hasil.error || "Gagal mengubah pengaturan cadangan otomatis."); return; }
+      muatStatusCadangan();
+    }}, status.aktif ? "Matikan Cadangan Otomatis" : "Aktifkan Cadangan Otomatis");
+
+    cadanganArea.appendChild(el("div", { class: "row", style: "gap:8px; flex-wrap:wrap;" }, btnBackupNow, btnToggle));
+  }
+
+  function muatStatusCadangan() {
+    panggilAPI("statusCadanganOtomatis", {}).then((status) => {
+      if (!status.ok) {
+        cadanganArea.innerHTML = "";
+        cadanganArea.appendChild(el("p", { style: "color:var(--red); font-size:.85em;" }, status.error || "Gagal memuat status cadangan."));
+        return;
+      }
+      gambarCadangan(status);
+    }).catch(() => {
+      cadanganArea.innerHTML = "";
+      cadanganArea.appendChild(el("p", { style: "color:var(--red); font-size:.85em;" }, "Gagal terhubung ke server."));
+    });
+  }
+  muatStatusCadangan();
+
+  panggilAPI("listAssessments", {}).then((hasil) => {
+    daftarArea.innerHTML = "";
+    if (!hasil.ok) {
+      daftarArea.appendChild(el("div", { class: "card" }, el("p", { style: "color:var(--red);" }, hasil.error || "Gagal memuat daftar asesmen.")));
+      return;
+    }
+    if (!hasil.daftar.length) {
+      daftarArea.appendChild(el("div", { class: "card", style: "text-align:center; padding:36px;" },
+        el("p", { class: "muted" }, "Belum ada asesmen. Klik \u201c+ Buat Asesmen Baru\u201d untuk membuat asesmen pertamamu.")
+      ));
+      return;
+    }
+    const grid = el("div", { style: "display:grid; gap:10px;" });
+    hasil.daftar.forEach((a) => {
+      grid.appendChild(
+        el("button", { class: "card between", style: "text-align:left; cursor:pointer; width:100%;", onclick: () => halamanDashboard(a.code) },
+          el("div", {},
+            el("div", { class: "row", style: "gap:.5em; align-items:baseline;" },
+              el("div", { class: "disp", style: "font-size:1.2em;" }, a.mapel),
+              a.jenjang ? el("span", { class: "stamp", style: "color:var(--ink-soft);" }, `Kelas ${a.jenjang}`) : el("span")
+            ),
+            el("div", { class: "muted", style: "font-size:.78em; margin-top:2px;" },
+              `${a.jumlahSoal} soal · ${a.jumlahSiswa} siswa · ${a.waktuMenit} menit` +
+              (a.createdAt ? ` · dibuat ${new Date(a.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}` : "")
+            )
+          ),
+          el("div", { style: "text-align:right; flex-shrink:0;" },
+            el("div", { class: "mono", style: "font-size:1.1em; font-weight:700; color:var(--blue);" }, a.code),
+            (() => {
+              const LABEL = { terjadwal: "Terjadwal", aktif: "Aktif", dijeda: "Dijeda", ditutup: "Ditutup" };
+              const WARNA = { terjadwal: "var(--gold)", aktif: "var(--green)", dijeda: "var(--gold)", ditutup: "var(--ink-soft)" };
+              return el("span", { class: "stamp", style: `color:${WARNA[a.status] || "var(--ink-soft)"}` }, LABEL[a.status] || a.status);
+            })()
+          )
+        )
+      );
+    });
+    daftarArea.appendChild(grid);
+  }).catch(() => {
+    daftarArea.innerHTML = "";
+    daftarArea.appendChild(el("div", { class: "card" }, el("p", { style: "color:var(--red);" }, "Gagal terhubung ke server.")));
+  });
+}
+
+/* =========================================================
+   6) GURU — FORM BUAT ASESMEN (wizard)
+   ========================================================= */
+function halamanBuatAsesmen(existing) {
+  const modeEdit = !!(existing && existing.code);
+  const state = modeEdit
+    ? {
+        langkah: 1,
+        mapel: existing.mapel || "", waktuMenit: existing.waktuMenit || 30,
+        jenjang: existing.jenjang || "7",
+        acakSoal: !!existing.acakSoal, acakOpsi: !!existing.acakOpsi,
+        jadwalMulai: existing.jadwalMulai || 0,
+        wajibLengkap: !!existing.wajibLengkap,
+        kelasList: [...new Set((existing.siswa || []).map(s => s.kelas))].length ? [...new Set((existing.siswa || []).map(s => s.kelas))] : ["7A"],
+        siswa: (existing.siswa || []).map(s => ({ id: s.id, nama: s.nama, kelas: s.kelas })),
+        soal: (existing.soal || []).map(s => ({
+          id: s.id,
+          teks: s.teks, opsi: (s.opsi || []).map(normalisasiOpsiFE), gambar: s.gambar || "", gambarFileId: s.gambarFileId || "",
+          tipe: s.tipe || "pg",
+          kunci: s.tipe === "pgk" ? (Array.isArray(s.kunci) ? s.kunci.slice() : []) : Number(s.kunci) || 0,
+          bobot: Number(s.bobot) > 0 ? Number(s.bobot) : 1,
+        })),
+      }
+    : {
+        langkah: 1,
+        mapel: "", waktuMenit: 30, jenjang: "7", acakSoal: true, acakOpsi: true,
+        jadwalMulai: 0,
+        wajibLengkap: false,
+        kelasList: ["7A"],
+        siswa: [],
+        soal: [{ teks: "", opsi: [opsiKosong(), opsiKosong(), opsiKosong(), opsiKosong()], kunci: 0, tipe: "pg", bobot: 1 }],
+      };
+  const kembaliKe = modeEdit ? () => halamanDashboard(existing.code) : halamanGuruBeranda;
+
+  function pesanValidasi(l) {
+    if (l === 1) return state.mapel.trim() && state.waktuMenit > 0 && String(state.jenjang || "").trim() ? null : "Isi mapel, jenjang kelas, dan waktu terlebih dahulu.";
+    if (l === 2) return state.siswa.length > 0 ? null : "Tambahkan minimal satu siswa.";
+    if (l === 3) {
+      const lengkap = state.soal.length && state.soal.every(s => {
+        if (!s.teks.trim()) return false;
+        if (s.tipe === "tbs") {
+          return Array.isArray(s.pernyataan) && s.pernyataan.length >= 2 && s.pernyataan.every(p => p && p.teks && p.teks.trim());
+        }
+        return s.opsi.every(o => !opsiKosongTeksDanGambar(o)) &&
+          (s.tipe === "pgk" ? Array.isArray(s.kunci) && s.kunci.length > 0 : true);
+      });
+      return lengkap ? null : "Lengkapi semua soal — untuk tipe Tabel Benar-Salah isi minimal 2 pernyataan, untuk tipe lain lengkapi semua pilihan jawaban (teks atau gambar) dan pastikan soal kompleks punya minimal satu jawaban benar.";
+    }
+    return null;
+  }
+
+  function gambar() {
+    const langkahLabel = ["Detail", "Siswa", "Soal", "Tinjau"];
+    const stepsRow = el("div", { class: "steps" });
+    langkahLabel.forEach((l, i) => {
+      stepsRow.appendChild(el("div", { class: `step-dot ${state.langkah === i + 1 ? "on" : ""}` }, String(i + 1)));
+      if (i < langkahLabel.length - 1) stepsRow.appendChild(el("div", { class: "step-line" }));
+    });
+
+    let isi;
+    if (state.langkah === 1) isi = langkah1();
+    else if (state.langkah === 2) isi = langkah2();
+    else if (state.langkah === 3) isi = langkah3();
+    else isi = langkah4();
+
+    const errNode = el("p", { style: "color:var(--red); font-size:.85em; margin-top:10px;" });
+
+    const tombolBawah = el("div", { class: "between", style: "margin-top:20px;" },
+      el("button", { class: "btn", disabled: state.langkah === 1 ? "true" : null, onclick: () => { state.langkah--; gambar(); } }, "Sebelumnya"),
+      state.langkah < 4
+        ? el("button", { class: "btn btn-primary", onclick: () => {
+            const err = pesanValidasi(state.langkah);
+            if (err) { errNode.textContent = err; return; }
+            state.langkah++; gambar();
+          }}, "Lanjut")
+        : el("span")
+    );
+
+    render(
+      el("div", { class: "wrap" },
+        el("button", { class: "btn", style: "margin-bottom:20px;", onclick: kembaliKe }, "← Batal"),
+        modeEdit ? el("span", { class: "stamp", style: "color:var(--gold); margin-bottom:14px; display:inline-block;" }, `Mengedit: ${existing.code}`) : el("span"),
+        stepsRow,
+        el("div", { class: "card" }, isi),
+        errNode,
+        tombolBawah
+      )
+    );
+  }
+
+  function langkah1() {
+    const mapelInput = el("input", { value: state.mapel, oninput: (e) => state.mapel = e.target.value, placeholder: "mis. IPS, Matematika…" });
+    const waktuInput = el("input", { type: "number", min: "1", value: state.waktuMenit, style: "max-width:140px;", oninput: (e) => state.waktuMenit = Number(e.target.value) });
+    const cbSoal = el("input", { type: "checkbox", checked: state.acakSoal ? "checked" : null, onchange: (e) => state.acakSoal = e.target.checked });
+    const cbOpsi = el("input", { type: "checkbox", checked: state.acakOpsi ? "checked" : null, onchange: (e) => state.acakOpsi = e.target.checked });
+    const cbWajibLengkap = el("input", { type: "checkbox", checked: state.wajibLengkap ? "checked" : null, onchange: (e) => state.wajibLengkap = e.target.checked });
+
+    const JENJANG_BAKU = ["7", "8", "9"];
+    const jenjangSudahBaku = JENJANG_BAKU.includes(String(state.jenjang));
+    const jenjangSelect = el("select", { style: "max-width:220px;" });
+    JENJANG_BAKU.forEach(j => jenjangSelect.appendChild(el("option", { value: j, selected: state.jenjang === j ? "selected" : null }, `Kelas ${j}`)));
+    jenjangSelect.appendChild(el("option", { value: "__lainnya__", selected: !jenjangSudahBaku ? "selected" : null }, "Lainnya…"));
+    const jenjangManualInput = el("input", {
+      value: jenjangSudahBaku ? "" : state.jenjang,
+      placeholder: "mis. 10, 11, 12, atau nama jenjang lain",
+      style: `margin-top:8px; ${jenjangSudahBaku ? "display:none;" : ""}`,
+      oninput: (e) => state.jenjang = e.target.value,
+    });
+    jenjangSelect.addEventListener("change", (e) => {
+      if (e.target.value === "__lainnya__") {
+        state.jenjang = jenjangManualInput.value || "";
+        jenjangManualInput.style.display = "block";
+        jenjangManualInput.focus();
+      } else {
+        state.jenjang = e.target.value;
+        jenjangManualInput.style.display = "none";
+      }
+    });
+
+    // Jadwal mulai (opsional). Disimpan sebagai epoch ms; input datetime-local
+    // selalu dalam zona waktu LOKAL perangkat guru, jadi konversinya cukup
+    // lewat Date biasa (tanpa perlu urus offset manual).
+    function keDatetimeLocal(epoch) {
+      if (!epoch) return "";
+      const d = new Date(epoch);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    const jadwalInput = el("input", {
+      type: "datetime-local", value: keDatetimeLocal(state.jadwalMulai), style: "max-width:260px;",
+      oninput: (e) => { state.jadwalMulai = e.target.value ? new Date(e.target.value).getTime() : 0; },
+    });
+    const jadwalHapusBtn = el("button", { type: "button", class: "btn", style: "padding:.5em .9em;", onclick: () => { state.jadwalMulai = 0; jadwalInput.value = ""; } }, "Mulai Sekarang");
+
+    return el("div", {},
+      el("h3", { class: "disp", style: "margin-top:0;" }, "Detail Asesmen"),
+      el("label", { class: "field" }, "Mata Pelajaran"),
+      el("div", { style: "margin-bottom:16px;" }, mapelInput),
+      el("label", { class: "field" }, "Jenjang Kelas"),
+      el("div", { style: "margin-bottom:16px;" }, jenjangSelect, jenjangManualInput),
+      el("label", { class: "field" }, "Waktu Pengerjaan (menit)"),
+      el("div", { style: "margin-bottom:16px;" }, waktuInput),
+      el("label", { class: "field" }, "Jadwalkan Mulai (opsional)"),
+      el("div", { class: "row", style: "margin-bottom:6px;" }, jadwalInput, jadwalHapusBtn),
+      el("p", { class: "muted", style: "font-size:.78em; margin-bottom:16px;" },
+        "Kosongkan supaya asesmen langsung bisa diakses murid begitu dibuat. Kalau diisi, murid tidak akan bisa masuk sebelum waktu tersebut — status otomatis berubah jadi \"Aktif\" tepat pada waktunya, tanpa perlu kamu buka manual."
+      ),
+      el("label", { class: "row", style: "margin-bottom:8px; cursor:pointer;" }, cbSoal, "Acak urutan soal untuk tiap siswa"),
+      el("label", { class: "row", style: "margin-bottom:8px; cursor:pointer;" }, cbOpsi, "Acak urutan pilihan jawaban untuk tiap siswa"),
+      el("label", { class: "row", style: "cursor:pointer;" }, cbWajibLengkap, "Wajib jawab semua soal sebelum bisa mengumpulkan"),
+      el("p", { class: "muted", style: "font-size:.78em; margin-top:6px;" },
+        "Kalau dicentang, tombol \"Kumpulkan Jawaban\" akan menolak selama masih ada soal kosong. Ini tidak berlaku saat waktu pengerjaan sudah habis — murid tetap bisa mengumpulkan otomatis walau belum semua terjawab, supaya tidak terjebak tidak bisa mengumpulkan sama sekali."
+      )
+    );
+  }
+
+  function langkah2() {
+    const wrap = el("div", {});
+    const kelasBaruInput = el("input", { placeholder: "+ kelas", value: state.jenjang || "", style: "max-width:110px;" });
+    const kelasChipRow = el("div", { class: "row", style: "margin-bottom:14px;" });
+    function gambarKelasChip() {
+      kelasChipRow.innerHTML = "";
+      kelasChipRow.appendChild(el("span", { class: "muted", style: "font-size:.8em; font-weight:600; text-transform:uppercase;" }, "Kelas:"));
+      state.kelasList.forEach(k => kelasChipRow.appendChild(
+        el("span", { class: "stamp", style: "color:var(--ink-soft)" },
+          k,
+          el("button", {
+            type: "button", class: "chip-hapus", title: `Hapus kelas "${k}" dari pilihan cepat`,
+            onclick: (e) => { e.preventDefault(); e.stopPropagation(); hapusKelas(k); }
+          }, "×")
+        )
+      ));
+      kelasChipRow.appendChild(kelasBaruInput);
+      kelasChipRow.appendChild(el("button", { class: "btn", style: "padding:.35em .6em;", onclick: () => {
+        const v = kelasBaruInput.value.trim();
+        if (v && !state.kelasList.includes(v)) { state.kelasList.push(v); kelasBaruInput.value = ""; gambarKelasChip(); gambarKelasSelect(); }
+      }}, "+"));
+    }
+
+    // Menghapus kelas yang salah ketik dari daftar pilihan cepat. Siswa yang
+    // SUDAH terlanjur memakai kelas itu TIDAK dihapus/diubah — kalau masih
+    // ada yang memakainya, guru diminta konfirmasi dulu supaya tidak salah
+    // hapus tanpa sadar.
+    function hapusKelas(k) {
+      if (state.kelasList.length <= 1) { alert("Minimal harus ada 1 kelas di pilihan cepat."); return; }
+      const jumlahSiswa = state.siswa.filter(s => s.kelas === k).length;
+      if (jumlahSiswa > 0) {
+        const lanjut = confirm(`${jumlahSiswa} siswa masih memakai kelas "${k}". Data siswa tidak akan dihapus/diubah, tapi kelas ini tidak akan muncul lagi di pilihan cepat. Lanjutkan menghapus?`);
+        if (!lanjut) return;
+      }
+      state.kelasList = state.kelasList.filter(x => x !== k);
+      gambarKelasChip();
+      gambarKelasSelect();
+    }
+
+    const namaInput = el("input", { placeholder: "Nama siswa" });
+    const kelasSelect = el("select", {});
+    function gambarKelasSelect() {
+      kelasSelect.innerHTML = "";
+      state.kelasList.forEach(k => kelasSelect.appendChild(el("option", { value: k }, k)));
+    }
+    gambarKelasSelect();
+
+    // Format .xlsx yang diunduh sengaja dibuat SAMA PERSIS dengan format yang
+    // dibaca oleh pengunggah di bawah (header "Nama"/"Kelas" di baris 1, lalu
+    // Kolom A = Nama, Kolom B = Kelas) — jadi guru bisa unduh → isi → unggah
+    // lagi tanpa perlu menyesuaikan apa pun.
+    function unduhTemplateSiswa() {
+      if (typeof XLSX === "undefined") {
+        alert("Pustaka Excel belum siap dimuat. Coba lagi sebentar atau muat ulang halaman.");
+        return;
+      }
+      const jenjang = String(state.jenjang || "7").trim() || "7";
+      const data = [
+        ["Nama", "Kelas"],
+        ["Andi Saputra", `${jenjang}A`],
+        ["Bunga Lestari", `${jenjang}A`],
+        ["Citra Dewi", `${jenjang}B`],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws["!cols"] = [{ wch: 28 }, { wch: 10 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Daftar Siswa");
+      XLSX.writeFile(wb, `format-daftar-siswa-kelas-${jenjang}.xlsx`);
+    }
+
+    const tabelSiswa = el("div", {});
+    function gambarTabelSiswa() {
+      tabelSiswa.innerHTML = "";
+      if (!state.siswa.length) { tabelSiswa.appendChild(el("p", { class: "muted", style: "font-size:.9em;" }, "Belum ada siswa ditambahkan.")); return; }
+      const tbl = el("table", {}, el("thead", {}, el("tr", {}, el("th", {}, "No"), el("th", {}, "Nama"), el("th", {}, "Kelas"), el("th", {}, ""))));
+      const tbody = el("tbody", {});
+      state.siswa.forEach((s, i) => {
+        tbody.appendChild(el("tr", {},
+          el("td", { class: "mono" }, String(i + 1)),
+          el("td", {}, s.nama),
+          el("td", {}, el("span", { class: "stamp", style: "color:var(--ink-soft)" }, s.kelas)),
+          el("td", {}, el("button", { class: "btn", style: "padding:.2em .5em; color:var(--red); border-color:var(--red)", onclick: () => { state.siswa.splice(i, 1); gambarTabelSiswa(); } }, "×"))
+        ));
+      });
+      tbl.appendChild(tbody);
+      tabelSiswa.appendChild(el("div", { style: "border:1px solid var(--paper-line); border-radius:5px; overflow:auto;" }, tbl));
+    }
+
+    function tambahSiswa() {
+      const n = namaInput.value.trim();
+      if (!n) return;
+      state.siswa.push({ nama: n, kelas: kelasSelect.value });
+      namaInput.value = "";
+      gambarTabelSiswa();
+    }
+
+    const tempelArea = el("textarea", { rows: "4", placeholder: "Andi Saputra, 7A\nBunga Lestari, 7A\nCitra Dewi, 7B" });
+
+    const excelInput = el("input", { type: "file", accept: ".xlsx,.xls,.csv" });
+    const excelStatus = el("p", { class: "muted", style: "font-size:.8em; margin-top:6px;" });
+    excelInput.addEventListener("change", () => {
+      const file = excelInput.files[0];
+      if (!file) return;
+      if (typeof XLSX === "undefined") {
+        excelStatus.textContent = "Pustaka pembaca Excel gagal dimuat. Periksa koneksi internet lalu muat ulang halaman.";
+        excelStatus.style.color = "var(--red)";
+        return;
+      }
+      excelStatus.textContent = "Membaca file…";
+      excelStatus.style.color = "var(--ink-soft)";
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const wb = XLSX.read(data, { type: "array" });
+          const sheetName = wb.SheetNames[0];
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: "" });
+          let mulaiDari = 0;
+          if (rows.length) {
+            const kolomA = String(rows[0][0] || "").trim().toLowerCase();
+            const kolomB = String(rows[0][1] || "").trim().toLowerCase();
+            if (kolomA.includes("nama") || kolomB.includes("kelas")) mulaiDari = 1;
+          }
+          let ditambah = 0;
+          for (let i = mulaiDari; i < rows.length; i++) {
+            const nama = String(rows[i][0] || "").trim();
+            const kelas = String(rows[i][1] || "").trim() || kelasSelect.value;
+            if (!nama) continue;
+            if (!state.kelasList.includes(kelas)) state.kelasList.push(kelas);
+            state.siswa.push({ nama, kelas });
+            ditambah++;
+          }
+          if (ditambah > 0) {
+            excelStatus.textContent = `${ditambah} siswa berhasil ditambahkan dari file.`;
+            excelStatus.style.color = "var(--green)";
+          } else {
+            excelStatus.textContent = "Tidak ada baris nama yang terbaca. Pastikan Kolom A berisi nama siswa.";
+            excelStatus.style.color = "var(--red)";
+          }
+          gambarKelasChip(); gambarKelasSelect(); gambarTabelSiswa();
+        } catch (err) {
+          excelStatus.textContent = "Gagal membaca file. Pastikan formatnya .xlsx, .xls, atau .csv.";
+          excelStatus.style.color = "var(--red)";
+        }
+        excelInput.value = "";
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    gambarKelasChip();
+
+    wrap.appendChild(el("h3", { class: "disp", style: "margin-top:0;" }, "Daftar Siswa"));
+    wrap.appendChild(el("p", { class: "muted", style: "font-size:.85em; margin-bottom:14px;" }, "Nama-nama ini muncul sebagai dropdown pilihan saat siswa masuk."));
+    wrap.appendChild(el("p", { class: "muted", style: "font-size:.78em; margin:-8px 0 12px;" }, `Kotak "+ kelas" sudah diisi jenjang "${state.jenjang || "—"}" — tinggal tambahkan huruf bagian, mis. "${state.jenjang || "7"}A".`));
+    wrap.appendChild(kelasChipRow);
+    wrap.appendChild(el("div", { class: "row", style: "margin-bottom:12px;" },
+      el("div", { style: "flex:1; min-width:180px;" }, namaInput),
+      el("div", { style: "width:110px;" }, kelasSelect),
+      el("button", { class: "btn", onclick: tambahSiswa }, "+")
+    ));
+    wrap.appendChild(el("details", { style: "margin-bottom:10px;" },
+      el("summary", {}, "Atau unggah file Excel (.xlsx / .xls / .csv)"),
+      el("div", { style: "margin-top:8px;" },
+        el("div", { class: "row", style: "align-items:center; gap:10px; margin-bottom:10px; padding:10px 12px; background:var(--paper); border-radius:8px;" },
+          el("span", { class: "muted", style: "font-size:.8em; flex:1;" }, "Belum punya filenya? Unduh dulu format kosongnya, isi Nama & Kelas, lalu unggah lagi persis di bawah ini."),
+          el("button", { type: "button", class: "btn", style: "font-size:.8em; padding:.45em .8em; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;", onclick: unduhTemplateSiswa },
+            ikonEl(IKON.unduh, "btn-icon"), "Unduh Format"
+          )
+        ),
+        el("p", { class: "muted", style: "font-size:.8em; margin-bottom:8px;" }, "Kolom A = Nama, Kolom B = Kelas. Baris pertama boleh judul kolom atau langsung data. Jika Kolom B kosong, siswa memakai kelas yang dipilih di dropdown atas."),
+        excelInput,
+        excelStatus
+      )
+    ));
+    wrap.appendChild(el("details", { style: "margin-bottom:16px;" },
+      el("summary", {}, "Atau tempel banyak nama sekaligus (Nama, Kelas per baris)"),
+      el("div", { style: "margin-top:8px;" }, tempelArea),
+      el("button", { class: "btn", style: "margin-top:8px;", onclick: () => {
+        const baris = tempelArea.value.split("\n").map(b => b.trim()).filter(Boolean);
+        baris.forEach(b => {
+          const [nama, kelas] = b.split(",").map(x => x && x.trim());
+          const k = kelas || kelasSelect.value;
+          if (!state.kelasList.includes(k)) state.kelasList.push(k);
+          state.siswa.push({ nama: nama || b, kelas: k });
+        });
+        tempelArea.value = "";
+        gambarKelasChip(); gambarKelasSelect(); gambarTabelSiswa();
+      }}, "Tambahkan dari tempelan")
+    ));
+    wrap.appendChild(tabelSiswa);
+    gambarTabelSiswa();
+    return wrap;
+  }
+
+  function langkah3() {
+    const wrap = el("div", {});
+    wrap.appendChild(el("h3", { class: "disp", style: "margin-top:0;" }, "Soal Pilihan Ganda"));
+    wrap.appendChild(elBannerKatex());
+    wrap.appendChild(el("details", { style: "margin-bottom:16px;" },
+      el("summary", {}, "📐 Cara menulis notasi matematika (pecahan, akar, pangkat, dll)"),
+      el("div", { style: "margin-top:10px; font-size:.85em; color:var(--ink-soft);" },
+        el("p", { style: "margin:0 0 8px;" },
+          "Cara termudah: pakai tombol toolbar di atas kotak soal/pilihan jawaban — baris pertama untuk pecahan/akar/pangkat/indeks (klik, lalu ketik ulang bagian yang tersorot), baris kedua untuk simbol siap pakai (×, π, ≤, dst). Tidak perlu menghafal kode apa pun."),
+        el("p", { style: "margin:0 0 8px;" },
+          "Kalau ingin menulis sendiri, apit rumus dengan tanda dolar ($...$) lalu tulis kode LaTeX-nya. Akan otomatis tampil rapi di layar murid maupun di pratinjau. Contoh:"),
+        el("div", { style: "display:grid; gap:6px;" },
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "$\\frac{1}{2}$"), el("span", {}, "→ pecahan")),
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "$\\sqrt{16}$"), el("span", {}, "→ bentuk akar")),
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "$x^2$"), el("span", {}, "→ pangkat")),
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "$a_1$"), el("span", {}, "→ indeks bawah")),
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "$6 \\times 2 \\div 3$"), el("span", {}, "→ simbol × dan ÷"))
+        ),
+        el("p", { style: "margin:10px 0 0; padding:8px 10px; background:var(--paper); border-radius:6px;" },
+          "⚠️ Kalau soal memuat tanda dolar ", el("strong", {}, "sungguhan"), " (mis. harga barang, bukan rumus) — tulis ",
+          el("span", { class: "mono" }, "\\$"), " (backslash lalu dolar), supaya tidak keliru dianggap pembuka rumus. Contoh: ",
+          el("span", { class: "mono" }, "Harga baju \\$50, celana \\$75."), " akan tampil sebagai \"Harga baju $50, celana $75.\" apa adanya."
+        )
+      )
+    ));
+    wrap.appendChild(el("details", { style: "margin-bottom:16px;" },
+      el("summary", {}, "🖊️ Cara memformat teks (tebal, miring, garis bawah)"),
+      el("div", { style: "margin-top:10px; font-size:.85em; color:var(--ink-soft);" },
+        el("p", { style: "margin:0 0 8px;" }, "Sorot bagian teks yang mau diformat lalu tekan tombol B/I/U di atas kotak soal atau pilihan jawaban. Kalau tidak ada teks yang disorot, tombolnya menyisipkan tanda di posisi kursor. Bisa juga ditulis manual:"),
+        el("div", { style: "display:grid; gap:6px;" },
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "**tebal**"), el("span", {}, "→ ", el("strong", {}, "tebal"))),
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "*miring*"), el("span", {}, "→ ", el("em", {}, "miring"))),
+          el("div", { class: "row" }, el("span", { class: "mono", style: "background:var(--paper); padding:.2em .5em; border-radius:5px;" }, "__garis bawah__"), el("span", {}, "→ ", el("u", {}, "garis bawah")))
+        )
+      )
+    ));
+    const daftar = el("div", {});
+
+    function gambarSoal() {
+      daftar.innerHTML = "";
+      state.soal.forEach((s, i) => {
+        if (!s.tipe) s.tipe = "pg";
+        const multiPilih = s.tipe === "pgk";
+        const opsiTerkunci = s.tipe === "bs";
+        const tabelBS = s.tipe === "tbs";
+        const teksPreview = el("div", { class: "muted", style: "font-size:.85em; margin-top:4px; min-height:1.1em; overflow-x:auto; max-width:100%;" });
+        function perbaruiPreviewTeks() {
+          teksPreview.innerHTML = formatTeksKeHtml(s.teks || "");
+          renderMatematika(teksPreview);
+        }
+        const teksArea = el("textarea", { rows: "2", placeholder: "Tulis pertanyaan… (bisa pakai $\\frac{1}{2}$, $\\sqrt{x}$, dst.)", value: s.teks, oninput: (e) => { s.teks = e.target.value; perbaruiPreviewTeks(); } });
+        const teksToolbar = buatToolbarTeks(teksArea, (nilaiBaru) => { s.teks = nilaiBaru; perbaruiPreviewTeks(); });
+        perbaruiPreviewTeks();
+
+        const gambarStatus = el("p", { class: "muted", style: "font-size:.78em; margin:4px 0 0;" });
+        const gambarPreview = s.gambar
+          ? el("div", { style: "margin-bottom:8px;" },
+              el("img", { class: "gambar-editor", src: s.gambar }),
+              el("button", { class: "btn", style: "margin-top:6px; padding:.3em .6em; font-size:.8em; color:var(--red); border-color:var(--red);", onclick: () => { s.gambar = ""; s.gambarFileId = ""; gambarSoal(); } }, "Hapus Gambar")
+            )
+          : el("span");
+        const gambarInput = el("input", { type: "file", accept: "image/*" });
+        gambarInput.addEventListener("change", async () => {
+          const file = gambarInput.files[0];
+          if (!file) return;
+          gambarStatus.textContent = "Mengompres & mengunggah gambar…";
+          gambarStatus.style.color = "var(--ink-soft)";
+          try {
+            const dataUrl = await resizeGambarKeDataUrl(file, 1000);
+            const hasil = await panggilAPI("uploadGambar", { dataUrl, namaFile: file.name });
+            if (!hasil.ok) { gambarStatus.textContent = hasil.error || "Gagal mengunggah gambar."; gambarStatus.style.color = "var(--red)"; return; }
+            s.gambar = hasil.url;
+            s.gambarFileId = hasil.fileId || "";
+            s.gambarPublik = !!hasil.publik;
+            gambarSoal();
+          } catch (err) {
+            gambarStatus.textContent = "Gagal memproses gambar: " + err;
+            gambarStatus.style.color = "var(--red)";
+          }
+        });
+        const gambarBlok = el("div", { style: "margin-bottom:10px;" },
+          gambarPreview,
+          el("label", { class: "field" }, "Gambar Soal (opsional)"),
+          gambarInput,
+          gambarStatus
+        );
+
+        const tipeSelect = el("select", { style: "max-width:320px;" },
+          el("option", { value: "pg", selected: s.tipe === "pg" ? "selected" : null }, "Pilihan Ganda (satu jawaban benar)"),
+          el("option", { value: "pgk", selected: s.tipe === "pgk" ? "selected" : null }, "Pilihan Ganda Kompleks (jawaban benar > 1)"),
+          el("option", { value: "bs", selected: s.tipe === "bs" ? "selected" : null }, "Benar-Salah"),
+          el("option", { value: "tbs", selected: s.tipe === "tbs" ? "selected" : null }, "Tabel Benar-Salah (beberapa pernyataan)")
+        );
+        tipeSelect.addEventListener("change", (e) => {
+          const tipeBaru = e.target.value;
+          if (tipeBaru === "bs") {
+            s.opsi = [opsiKosong("Benar"), opsiKosong("Salah")];
+            s.kunci = 0;
+          } else if (tipeBaru === "tbs") {
+            if (!Array.isArray(s.pernyataan) || s.pernyataan.length < 2) {
+              s.pernyataan = [pernyataanKosong(), pernyataanKosong(), pernyataanKosong()];
+            }
+          } else {
+            if (s.tipe === "bs" || !Array.isArray(s.opsi) || s.opsi.length !== 4) s.opsi = [opsiKosong(), opsiKosong(), opsiKosong(), opsiKosong()];
+            s.kunci = tipeBaru === "pgk" ? [] : 0;
+          }
+          s.tipe = tipeBaru;
+          gambarSoal();
+        });
+
+        const bobotInput = el("input", {
+          type: "number", min: "1", max: "100", step: "1", value: s.bobot || 1,
+          style: "max-width:90px;",
+          oninput: (e) => { s.bobot = Math.min(100, Math.max(1, Math.round(Number(e.target.value)) || 1)); },
+          onblur: (e) => { e.target.value = s.bobot; },
+        });
+        const opsiWrap = el("div", { class: "grid2", style: "margin-bottom:6px;" });
+        if (!tabelBS) {
+          (s.opsi || []).forEach((o, idx) => {
+          const aktif = multiPilih ? (Array.isArray(s.kunci) && s.kunci.includes(idx)) : s.kunci === idx;
+          const bulat = el("span", { class: `bulat ${multiPilih ? "kotak" : ""} ${aktif ? "pilih" : ""}` }, multiPilih ? (aktif ? "✓" : "") : HURUF[idx]);
+          const opsiPreview = el("div", { class: "muted", style: "font-size:.8em; margin-top:2px; min-height:1.1em; overflow-x:auto; max-width:100%;" });
+          function perbaruiPreviewOpsi() {
+            opsiPreview.innerHTML = formatTeksKeHtml(o.teks || "");
+            renderMatematika(opsiPreview);
+          }
+          const opsiInput = el("input", {
+            class: "qi", placeholder: `Pilihan ${HURUF[idx]}`, value: o.teks,
+            readonly: opsiTerkunci ? "readonly" : null,
+            oninput: (e) => { if (!opsiTerkunci) { o.teks = e.target.value; perbaruiPreviewOpsi(); } },
+          });
+          const opsiToolbar = opsiTerkunci ? el("span") : buatToolbarTeks(opsiInput, (nilaiBaru) => { o.teks = nilaiBaru; perbaruiPreviewOpsi(); });
+          perbaruiPreviewOpsi();
+          const gambarOpsiDetails = el("details", { style: "margin-top:6px;" },
+            el("summary", { style: "font-size:.72em;" }, o.gambar ? "🖼️ Gambar pilihan ini" : "🖼️ Tambah gambar (opsional)"),
+            buatBlokGambar(o, { labelTeks: "Gambar untuk pilihan ini (opsional)", kelasGambar: "gambar-opsi-editor", onSelesai: gambarSoal })
+          );
+          gambarOpsiDetails.addEventListener("click", (e) => e.stopPropagation());
+          const kolom = el("div", { style: "flex:1; min-width:0;" }, opsiToolbar, opsiInput, opsiPreview, gambarOpsiDetails);
+          const label = el("label", { class: `opsi ${aktif ? "pilih" : ""}`, style: "align-items:flex-start;" }, bulat, kolom);
+          label.addEventListener("click", (e) => {
+            if (e.target === opsiInput) return;
+            // Kalau guru sedang menyorot (highlight) sebagian teks — biasanya bersiap
+            // menekan tombol format B/I/U — klik yang mengakhiri proses sorot itu
+            // TIDAK boleh ikut dianggap sebagai "pilih jawaban ini", karena akan
+            // memicu render ulang dan membatalkan seleksi tekstnya di tengah jalan.
+            const adaTeksTersorot = window.getSelection && String(window.getSelection()).length > 0;
+            if (adaTeksTersorot) return;
+            if (multiPilih) {
+              const arr = Array.isArray(s.kunci) ? s.kunci : [];
+              s.kunci = arr.includes(idx) ? arr.filter(v => v !== idx) : [...arr, idx];
+            } else {
+              s.kunci = idx;
+            }
+            gambarSoal();
+          });
+          opsiWrap.appendChild(label);
+          });
+        }
+        // Editor "Tabel Benar-Salah" — daftar pernyataan dinamis (bisa
+        // ditambah/dihapus), masing-masing punya toggle kunci BENAR/SALAH
+        // sendiri. Dipakai HANYA saat tipe soal ini "tbs".
+        const pernyataanWrap = el("div", { style: "margin-bottom:6px;" });
+        if (tabelBS) {
+          if (!Array.isArray(s.pernyataan)) s.pernyataan = [];
+          s.pernyataan.forEach((p, idx) => {
+            const previewP = el("div", { class: "muted", style: "font-size:.8em; margin-top:2px; overflow-x:auto; max-width:100%;" });
+            function perbaruiPreviewP() { previewP.innerHTML = formatTeksKeHtml(p.teks || ""); renderMatematika(previewP); }
+            const inputP = el("input", { class: "qi", placeholder: `Pernyataan ${idx + 1}`, value: p.teks, oninput: (e) => { p.teks = e.target.value; perbaruiPreviewP(); } });
+            const toolbarP = buatToolbarTeks(inputP, (nilaiBaru) => { p.teks = nilaiBaru; perbaruiPreviewP(); });
+            perbaruiPreviewP();
+            const toggleBenar = el("button", { type: "button", class: `btn ${p.kunci ? "btn-primary" : ""}`, style: "padding:.35em .8em; font-size:.78em;", onclick: () => { p.kunci = true; gambarSoal(); } }, "BENAR");
+            const toggleSalah = el("button", { type: "button", class: `btn ${!p.kunci ? "btn-primary" : ""}`, style: "padding:.35em .8em; font-size:.78em;", onclick: () => { p.kunci = false; gambarSoal(); } }, "SALAH");
+            const hapusP = s.pernyataan.length > 2
+              ? el("button", { class: "btn", style: "padding:.2em .5em; color:var(--red); border-color:var(--red);", onclick: () => { s.pernyataan.splice(idx, 1); gambarSoal(); } }, "×")
+              : el("span");
+            pernyataanWrap.appendChild(el("div", { class: "row", style: "gap:8px; align-items:flex-start; margin-bottom:10px; padding-bottom:10px; border-bottom:1px dashed var(--paper-line);" },
+              el("span", { class: "mono muted", style: "padding-top:.5em;" }, HURUF[idx] + "."),
+              el("div", { style: "flex:1; min-width:0;" }, toolbarP, inputP, previewP),
+              el("div", { class: "row", style: "gap:4px; flex-shrink:0;" }, toggleBenar, toggleSalah, hapusP)
+            ));
+          });
+          pernyataanWrap.appendChild(el("button", { type: "button", class: "btn", style: "font-size:.8em;", onclick: () => { s.pernyataan.push(pernyataanKosong()); gambarSoal(); } }, "+ Tambah Pernyataan"));
+        }
+
+        const hapusBtn = state.soal.length > 1
+          ? el("button", { class: "btn", style: "padding:.2em .5em; color:var(--red); border-color:var(--red)", onclick: () => { state.soal.splice(i, 1); gambarSoal(); } }, "×")
+          : el("span");
+        daftar.appendChild(el("div", { style: "border:1.5px solid var(--paper-line); border-radius:5px; padding:14px; margin-bottom:14px;" },
+          el("div", { class: "between", style: "margin-bottom:8px;" },
+            el("span", { class: "mono muted", style: "font-weight:600;" }, `No.${i + 1}`), hapusBtn
+          ),
+          el("div", { style: "margin-bottom:10px;" }, teksToolbar, teksArea, teksPreview),
+          gambarBlok,
+          el("div", { class: "row", style: "gap:14px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-end;" },
+            el("div", {}, el("label", { class: "field" }, "Tipe Soal"), tipeSelect),
+            el("div", {}, el("label", { class: "field" }, "Bobot (poin)"), bobotInput, el("div", { class: "muted", style: "font-size:.72em; margin-top:2px;" }, "1–100"))
+          ),
+          opsiWrap,
+          pernyataanWrap,
+          el("p", { style: "font-size:.75em; color:var(--gold); margin:8px 0 0;" },
+            tabelBS ? "Klik BENAR/SALAH untuk menandai kunci tiap pernyataan. Skor soal ini dihitung sebagian (proporsional) sesuai jumlah pernyataan yang dijawab benar." :
+            multiPilih ? "Tandai (✓) semua pilihan yang benar — bisa lebih dari satu." : "Bulatan yang disorot menandai jawaban benar.")
+        ));
+      });
+    }
+    gambarSoal();
+    wrap.appendChild(daftar);
+    wrap.appendChild(el("button", { class: "btn", onclick: () => { state.soal.push({ teks: "", opsi: [opsiKosong(), opsiKosong(), opsiKosong(), opsiKosong()], kunci: 0, tipe: "pg", bobot: 1 }); gambarSoal(); } }, "+ Tambah Soal"));
+    return wrap;
+  }
+
+  function langkah4() {
+    const wrap = el("div", {});
+    wrap.appendChild(el("h3", { class: "disp", style: "margin-top:0;" }, modeEdit ? "Tinjau & Simpan" : "Tinjau & Buat"));
+    const grid = el("div", { class: "grid2", style: "margin-bottom:20px; font-size:.9em;" });
+    const item = (label, val) => el("div", {}, el("div", { class: "muted" }, label), el("div", { class: "disp", style: "font-size:1.2em;" }, String(val)));
+    grid.appendChild(item("Mapel", state.mapel || "—"));
+    grid.appendChild(item("Jenjang", state.jenjang ? `Kelas ${state.jenjang}` : "—"));
+    grid.appendChild(item("Waktu", `${state.waktuMenit} menit`));
+    grid.appendChild(item("Jumlah Siswa", `${state.siswa.length} siswa`));
+    grid.appendChild(item("Jumlah Soal", `${state.soal.length} soal`));
+    grid.appendChild(item("Skor Maksimal", `${state.soal.reduce((total, s) => total + (Number(s.bobot) || 1), 0)} poin`));
+    wrap.appendChild(grid);
+
+    wrap.appendChild(el("button", { class: "btn btn-block", style: "margin-bottom:14px;", onclick: () => {
+      halamanPratinjauMurid({ mapel: state.mapel, jenjang: state.jenjang, waktuMenit: state.waktuMenit, soal: state.soal }, () => { gambar(); });
+    }}, "👁 Pratinjau sebagai Murid"));
+
+    if (modeEdit) {
+      wrap.appendChild(el("div", { class: "warn-box", style: "margin-bottom:14px; background:var(--paper);" },
+        el("span", {}, "ℹ"),
+        el("p", { style: "margin:0;" }, "Progres & jawaban siswa yang sudah ada akan tetap dipertahankan sebisa mungkin. Kalau kamu menghapus siswa atau soal, data terkait mereka ikut hilang (memang bagian dari penghapusan itu). Kalau kamu mengubah kunci jawaban suatu soal SETELAH ada siswa yang sudah selesai mengerjakan, skor mereka otomatis dihitung ulang memakai kunci yang baru.")
+      ));
+    }
+
+    const status = el("p", { class: "muted", style: "font-size:.85em;" });
+    const tombol = el("button", { class: "btn btn-red btn-block", onclick: async () => {
+      if (modeEdit && !confirm("Simpan perubahan sekarang?")) return;
+      tombol.disabled = true; tombol.textContent = modeEdit ? "Menyimpan…" : "Membuat kode asesmen…";
+      try {
+        const hasil = modeEdit
+          ? await panggilAPI("updateAssessment", {
+              code: existing.code, mapel: state.mapel, jenjang: state.jenjang, waktuMenit: state.waktuMenit,
+              acakSoal: state.acakSoal, acakOpsi: state.acakOpsi, jadwalMulai: state.jadwalMulai, wajibLengkap: state.wajibLengkap,
+              siswa: state.siswa, soal: state.soal,
+            })
+          : await panggilAPI("createAssessment", {
+              mapel: state.mapel, jenjang: state.jenjang, waktuMenit: state.waktuMenit,
+              acakSoal: state.acakSoal, acakOpsi: state.acakOpsi, jadwalMulai: state.jadwalMulai, wajibLengkap: state.wajibLengkap,
+              siswa: state.siswa, soal: state.soal,
+            });
+        if (!hasil.ok) { status.textContent = hasil.error || "Gagal menyimpan asesmen."; tombol.disabled = false; tombol.textContent = "Coba Lagi"; return; }
+        halamanDashboard(modeEdit ? existing.code : hasil.code);
+      } catch (err) {
+        status.textContent = "Gagal terhubung ke server: " + err;
+        tombol.disabled = false; tombol.textContent = "Coba Lagi";
+      }
+    }}, modeEdit ? "Simpan Perubahan" : "Buat Asesmen & Dapatkan Kode");
+    wrap.appendChild(tombol);
+    wrap.appendChild(status);
+    return wrap;
+  }
+
+  gambar();
+}
+
+/* =========================================================
+   6b) GURU — PRATINJAU SOAL DARI SUDUT PANDANG MURID
+   Tampilan ini sengaja disamakan persis dengan halaman pengerjaan murid
+   (satu soal per layar, gaya CBT), tapi tanpa kunci jawaban ditampilkan,
+   tanpa deteksi kecurangan, dan tidak ada apa pun yang dikirim/disimpan
+   ke server — murni untuk pengecekan guru sebelum/actual asesmen dipakai.
+   ========================================================= */
+function halamanPratinjauMurid(data, kembali) {
+  const soalList = (data.soal || []).filter(s => s && s.teks);
+  let index = 0;
+  let drawerTerbuka = false;
+  const jawabanLokal = {};
+  const rootNode = el("div", {});
+  render(rootNode, { noHeader: true }); // punya .examhead sendiri, header portal tidak dipakai di sini
+
+  function gambarSoal() {
+    rootNode.innerHTML = "";
+    if (!soalList.length) {
+      rootNode.appendChild(el("div", { class: "center" },
+        el("div", { class: "card", style: "max-width:420px; text-align:center;" },
+          el("p", {}, "Belum ada soal yang lengkap untuk dipratinjau."),
+          el("button", { class: "btn", style: "margin-top:12px;", onclick: kembali }, "← Kembali")
+        )
+      ));
+      return;
+    }
+
+    rootNode.appendChild(el("div", { class: "examhead" },
+      el("span", { class: "stamp", style: "color:#fff; border-color:rgba(255,255,255,.5); margin-bottom:8px;" }, "👁 Mode Pratinjau"),
+      el("div", { class: "examhead-top" },
+        elTombolTogglSoal(() => { drawerTerbuka = !drawerTerbuka; gambarSoal(); }),
+        el("img", { src: LOGO_SEKOLAH_B64, alt: "Logo Sekolah", class: "examhead-logo" }),
+        el("div", { class: "examhead-text" },
+          el("div", { class: "eyebrow" }, "Asesmen Sumatif"),
+          el("div", { class: "mapel" }, data.mapel || "(Tanpa Mapel)"),
+          data.jenjang ? el("div", { class: "siswa", style: "font-size:1.1em;" }, `Kelas ${data.jenjang}`) : el("span")
+        )
+      ),
+      el("div", { class: "timer-chip" }, `${data.waktuMenit || 0} mnt`)
+    ));
+
+    const inner = el("div", { class: "wrap", style: "max-width:680px;" });
+    inner.appendChild(elBannerKatex());
+    inner.appendChild(el("div", { class: "warn-box", style: "margin-bottom:16px; background:var(--gold-soft);" },
+      el("span", {}, "ℹ"),
+      el("p", { style: "margin:0;" }, "Ini persis tampilan yang akan dilihat murid. Jawaban di sini tidak disimpan, dan kunci jawaban tidak pernah ditampilkan di layar murid maupun di pratinjau ini.")
+    ));
+
+    const s = soalList[index];
+    const kompleks = s.tipe === "pgk";
+    const matriks = s.tipe === "tbs";
+    const urutanOpsi = matriks ? [] : s.opsi.map((_, i) => i); // pratinjau: urutan asli, tidak diacak
+    const dipilih = jawabanLokal[index];
+    const dipilihArr = kompleks ? (Array.isArray(dipilih) ? dipilih : []) : null;
+    const jumlahPernyataan = matriks ? (s.pernyataan || []).length : 0;
+    const dipilihMatriks = matriks ? (Array.isArray(dipilih) ? dipilih : new Array(jumlahPernyataan).fill(null)) : null;
+
+    inner.appendChild(el("div", { class: "between muted", style: "font-size:.8em; margin-bottom:10px;" },
+      el("span", {}, `Soal ${index + 1} dari ${soalList.length} · ${Number(s.bobot) || 1} poin`),
+      el("span", {}, kompleks ? "Pilihan Ganda Kompleks" : (s.tipe === "bs" ? "Benar/Salah" : (matriks ? "Tabel Benar-Salah" : "Pilihan Ganda")))
+    ));
+
+    const qcard = el("div", { class: "qcard" },
+      el("div", { class: "row", style: "align-items:flex-start; margin-bottom:4px;" },
+        el("span", { class: "mono muted", style: "font-weight:600;" }, `${index + 1}.`),
+        el("p", { style: "margin:0; font-weight:500; flex:1; min-width:0;", html: formatTeksKeHtml(s.teks) })
+      ),
+      elGambarDenganCadangan("gambar-soal", s, "margin-left:22px; max-width:calc(100% - 22px);"),
+      kompleks ? el("p", { class: "muted", style: "font-size:.75em; margin:0 0 10px 22px;" }, "Pilih satu atau lebih jawaban.") :
+        matriks ? el("p", { class: "muted", style: "font-size:.75em; margin:0 0 10px 22px;" }, "Tentukan BENAR atau SALAH untuk setiap pernyataan.") : el("span")
+    );
+    if (matriks) {
+      const tabelWrap = el("div", { style: "overflow-x:auto; margin-left:22px;" });
+      const tabel = el("table", {},
+        el("tr", {},
+          el("th", {}, "Pernyataan"),
+          el("th", { style: "text-align:center; width:64px;" }, "BENAR"),
+          el("th", { style: "text-align:center; width:64px;" }, "SALAH")
+        )
+      );
+      (s.pernyataan || []).forEach((p, idx) => {
+        const nilai = dipilihMatriks[idx];
+        const tdBenar = el("td", {
+          style: "text-align:center; cursor:pointer;",
+          onclick: () => { dipilihMatriks[idx] = true; jawabanLokal[index] = dipilihMatriks.slice(); gambarSoal(); },
+        }, el("span", { class: `radio ${nilai === true ? "pilih" : ""}` }));
+        const tdSalah = el("td", {
+          style: "text-align:center; cursor:pointer;",
+          onclick: () => { dipilihMatriks[idx] = false; jawabanLokal[index] = dipilihMatriks.slice(); gambarSoal(); },
+        }, el("span", { class: `radio ${nilai === false ? "pilih" : ""}` }));
+        tabel.appendChild(el("tr", {},
+          el("td", { style: "white-space:normal; text-align:left;" }, el("span", { html: `${HURUF[idx]}. ${formatTeksKeHtml(p.teks)}` })),
+          tdBenar, tdSalah
+        ));
+      });
+      tabelWrap.appendChild(tabel);
+      qcard.appendChild(tabelWrap);
+    } else {
+      const opsiGrid = el("div", { style: "display:grid; gap:2px;" });
+      urutanOpsi.forEach((idxAsli, posisi) => {
+        const terpilih = kompleks ? dipilihArr.includes(idxAsli) : dipilih === idxAsli;
+        const opsiObj = normalisasiOpsiFE(s.opsi[idxAsli]);
+        const label = el("label", { class: `opsi ${terpilih ? "pilih" : ""}`, style: "align-items:flex-start;" },
+          el("span", { class: "opsi-letter" }, `${HURUF[posisi]}.`),
+          el("span", { class: `radio ${kompleks ? "kotak" : ""} ${terpilih ? "pilih" : ""}` }),
+          el("div", { style: "flex:1; min-width:0;" },
+            opsiObj.teks ? el("span", { class: "opsi-teks", html: formatTeksKeHtml(opsiObj.teks) }) : el("span"),
+            elGambarDenganCadangan("gambar-opsi", opsiObj)
+          )
+        );
+        label.addEventListener("click", () => {
+          if (kompleks) {
+            const sudahAda = Array.isArray(jawabanLokal[index]) ? jawabanLokal[index] : [];
+            jawabanLokal[index] = sudahAda.includes(idxAsli) ? sudahAda.filter(v => v !== idxAsli) : [...sudahAda, idxAsli];
+          } else {
+            jawabanLokal[index] = idxAsli;
+          }
+          gambarSoal();
+        });
+        opsiGrid.appendChild(label);
+      });
+      qcard.appendChild(opsiGrid);
+    }
+    inner.appendChild(qcard);
+    renderMatematika(qcard);
+
+    inner.appendChild(el("div", { class: "navseg", style: "margin-bottom:14px;" },
+      el("button", { disabled: index === 0 ? "true" : null, onclick: () => { index--; gambarSoal(); } },
+        el("span", {}, "←"), el("span", {}, "Sebelumnya")),
+      el("button", { disabled: index === soalList.length - 1 ? "true" : null, onclick: () => { index++; gambarSoal(); } },
+        el("span", {}, "Berikutnya"), el("span", {}, "→"))
+    ));
+    inner.appendChild(el("button", { class: "btn btn-red btn-block", onclick: kembali }, "← Tutup Pratinjau"));
+
+    rootNode.appendChild(inner);
+
+    const { overlay, drawer } = elDrawerNomorSoal({
+      jumlah: soalList.length,
+      terjawabFn: (i) => {
+        const soalI = soalList[i];
+        return soalI && soalI.tipe === "pgk" ? Array.isArray(jawabanLokal[i]) && jawabanLokal[i].length > 0 : jawabanLokal[i] !== undefined;
+      },
+      statusFn: () => null,
+      aktifIndex: index,
+      onPilih: (i) => { index = i; drawerTerbuka = false; gambarSoal(); },
+      terbuka: drawerTerbuka,
+      onTutup: () => { drawerTerbuka = false; gambarSoal(); },
+      tombolBawah: el("button", { class: "btn btn-red btn-block", onclick: kembali }, "← Tutup Pratinjau"),
+    });
+    rootNode.appendChild(overlay);
+    rootNode.appendChild(drawer);
+  }
+
+  gambarSoal();
+}
+
+/* =========================================================
+   7) GURU — DASHBOARD (real-time, plus tautan spreadsheet)
+   ========================================================= */
+function halamanDashboard(code) {
+  let timer = null;
+  const container = el("div", { class: "wrap" });
+  render(container);
+
+  async function muat() {
+    const hasil = await panggilAPI("getResults", { code });
+    container.innerHTML = "";
+    if (!hasil.ok) {
+      container.appendChild(el("button", { class: "btn", style: "margin-bottom:20px;", onclick: () => { clearInterval(timer); halamanGuruBeranda(); } }, "← Kembali"));
+      container.appendChild(el("p", {}, hasil.error || "Terjadi kesalahan."));
+      clearInterval(timer);
+      return;
+    }
+    const { assessment, baris } = hasil;
+    const selesai = baris.filter(b => b.status === "Selesai").length;
+    const mengerjakan = baris.filter(b => b.status === "Mengerjakan").length;
+    const totalKecurangan = baris.reduce((a, b) => a + (b.pindahTab||0) + (b.copy||0) + (b.paste||0) + (b.klikKanan||0) + (b.keluarFullscreen||0), 0);
+
+    container.appendChild(el("button", { class: "btn", style: "margin-bottom:20px;", onclick: () => { clearInterval(timer); halamanGuruBeranda(); } }, "← Asesmen Saya"));
+
+    const INDIKATOR_LABEL = { terjadwal: "● Terjadwal", aktif: "● Langsung", dijeda: "● Dijeda", ditutup: "● Ditutup" };
+    const INDIKATOR_WARNA = { terjadwal: "var(--gold)", aktif: "var(--green)", dijeda: "var(--gold)", ditutup: "var(--red)" };
+    container.appendChild(el("div", { class: "card between", style: "margin-bottom:18px;" },
+      el("div", {},
+        el("div", { class: "row", style: "margin-bottom:4px;" },
+          el("span", { style: `color:${INDIKATOR_WARNA[assessment.status] || "var(--ink-soft)"}; font-weight:700; font-size:.75em; text-transform:uppercase;` }, INDIKATOR_LABEL[assessment.status] || assessment.status),
+          assessment.jenjang ? el("span", { class: "stamp", style: "color:var(--ink-soft);" }, `Kelas ${assessment.jenjang}`) : el("span")
+        ),
+        el("h2", { class: "disp", style: "margin:0;" }, assessment.mapel),
+        el("p", { class: "muted", style: "font-size:.85em;" }, `${assessment.totalSoal} soal · ${assessment.waktuMenit} menit · ${baris.length} siswa`)
+      ),
+      el("div", { style: "text-align:right;" },
+        el("div", { class: "muted", style: "font-size:.75em;" }, "Kode Asesmen"),
+        el("div", { class: "mono", style: "font-size:1.6em; font-weight:700; color:var(--blue);" }, code)
+      )
+    ));
+
+    const statCard = (label, val, color) => el("div", { class: "card", style: "padding:14px;" },
+      el("div", { class: "disp", style: `font-size:1.6em; color:${color || "var(--ink)"}` }, String(val)),
+      el("div", { class: "muted", style: "font-size:.75em;" }, label)
+    );
+    container.appendChild(el("div", { style: "display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px;" },
+      statCard("Total Siswa", baris.length),
+      statCard("Mengerjakan", mengerjakan, "var(--gold)"),
+      statCard("Selesai", selesai, "var(--green)"),
+      statCard("Indikasi Kecurangan", totalKecurangan, "var(--red)")
+    ));
+
+    const STATUS_LABEL = {
+      terjadwal: `Terjadwal — ${assessment.jadwalMulai ? new Date(assessment.jadwalMulai).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }) : "-"}`,
+      aktif: "Menerima Peserta Baru",
+      dijeda: "Dijeda Sementara",
+      ditutup: "Ditutup",
+    };
+    const STATUS_WARNA = { terjadwal: "var(--gold)", aktif: "var(--green)", dijeda: "var(--gold)", ditutup: "var(--red)" };
+
+    async function ubahStatus(statusBaru) {
+      await panggilAPI("setStatus", { code, status: statusBaru });
+      muat();
+    }
+    // Tombol aksi status berbeda-beda tergantung kondisi saat ini:
+    // - terjadwal -> bisa dibuka paksa sekarang (melewati jadwal)
+    // - aktif     -> bisa dijeda (berhenti seketika) atau ditutup (permanen)
+    // - dijeda    -> bisa dilanjutkan lagi, atau langsung ditutup
+    // - ditutup   -> bisa dibuka kembali seperti semula
+    const tombolStatus = [];
+    if (assessment.status === "terjadwal") {
+      tombolStatus.push(el("button", { class: "btn", onclick: () => ubahStatus("aktif") }, "Buka Sekarang"));
+    }
+    if (assessment.status === "aktif") {
+      tombolStatus.push(el("button", { class: "btn", onclick: () => ubahStatus("dijeda") }, "Jeda Ujian"));
+      tombolStatus.push(el("button", { class: "btn btn-red-outline", onclick: () => ubahStatus("ditutup") }, "Tutup Asesmen"));
+    }
+    if (assessment.status === "dijeda") {
+      tombolStatus.push(el("button", { class: "btn", onclick: () => ubahStatus("aktif") }, "Lanjutkan Ujian"));
+      tombolStatus.push(el("button", { class: "btn btn-red-outline", onclick: () => ubahStatus("ditutup") }, "Tutup Asesmen"));
+    }
+    if (assessment.status === "ditutup") {
+      tombolStatus.push(el("button", { class: "btn", onclick: () => ubahStatus("aktif") }, "Buka Kembali"));
+    }
+
+    container.appendChild(el("div", { class: "between", style: "margin-bottom:10px; flex-wrap:wrap; gap:8px;" },
+      el("span", { class: "stamp", style: `color:${STATUS_WARNA[assessment.status] || "var(--ink-soft)"}` }, STATUS_LABEL[assessment.status] || assessment.status),
+      el("div", { class: "row" },
+        el("a", { class: "btn", href: assessment.sheetUrl, target: "_blank", style: "text-decoration:none;" }, "Buka di Google Sheets"),
+        el("button", { class: "btn", onclick: async (e) => {
+          const btn2 = e.currentTarget; btn2.disabled = true; btn2.textContent = "Memuat…";
+          const hasil = await panggilAPI("getAssessmentDetail", { code, untukPratinjau: true });
+          btn2.disabled = false; btn2.textContent = "Pratinjau sebagai Murid";
+          if (!hasil.ok) { alert(hasil.error || "Gagal memuat soal."); return; }
+          clearInterval(timer);
+          halamanPratinjauMurid(
+            { mapel: hasil.mapel, waktuMenit: hasil.waktuMenit, soal: hasil.soal },
+            () => halamanDashboard(code)
+          );
+        }}, "Pratinjau sebagai Murid"),
+        el("button", { class: "btn", onclick: () => { clearInterval(timer); halamanAnalitikSoal(code, assessment, baris, () => halamanDashboard(code)); } }, "📊 Analitik Soal"),
+        el("button", { class: "btn", onclick: async (e) => {
+          const btn2 = e.currentTarget; btn2.disabled = true; btn2.textContent = "Memuat…";
+          const hasil = await panggilAPI("getAssessmentDetail", { code });
+          btn2.disabled = false; btn2.textContent = "Edit Asesmen";
+          if (!hasil.ok) { alert(hasil.error || "Gagal memuat asesmen."); return; }
+          clearInterval(timer);
+          halamanBuatAsesmen(hasil);
+        }}, "Edit Asesmen"),
+        ...tombolStatus,
+        el("button", { class: "btn btn-red-outline", onclick: async () => {
+          if (!confirm(`Hapus asesmen "${assessment.mapel}" (kode ${code}) beserta seluruh hasil pekerjaan siswanya? Tindakan ini tidak bisa dibatalkan.`)) return;
+          const hasil = await panggilAPI("deleteAssessment", { code });
+          if (!hasil.ok) { alert(hasil.error || "Gagal menghapus asesmen."); return; }
+          clearInterval(timer);
+          halamanGuruBeranda();
+        }}, "Hapus Asesmen")
+      )
+    ));
+
+    const tbl = el("table", {},
+      el("thead", {}, el("tr", {}, ["Nama","Kelas","Status","Terjawab","Skor","Pindah Tab","Copy","Paste","Klik Kanan","Keluar Fullscreen"].map(h => el("th", {}, h))))
+    );
+    const tbody = el("tbody", {});
+    baris.forEach(b => {
+      tbody.appendChild(el("tr", {},
+        el("td", { style: "font-weight:600;" }, b.nama),
+        el("td", {}, b.kelas),
+        el("td", {}, el("span", { class: "stamp", style: `color:${b.status === "Selesai" ? "var(--green)" : b.status === "Mengerjakan" ? "var(--gold)" : "var(--ink-soft)"}` }, b.status)),
+        el("td", { class: "mono" }, `${b.terjawab||0}/${assessment.totalSoal}`),
+        el("td", { class: "mono" }, b.status === "Selesai" ? `${b.skor}/${assessment.totalBobot}` : "—"),
+        el("td", { class: "mono", style: b.pindahTab ? "color:var(--red)" : "" }, String(b.pindahTab||0)),
+        el("td", { class: "mono", style: b.copy ? "color:var(--red)" : "" }, String(b.copy||0)),
+        el("td", { class: "mono", style: b.paste ? "color:var(--red)" : "" }, String(b.paste||0)),
+        el("td", { class: "mono", style: b.klikKanan ? "color:var(--red)" : "" }, String(b.klikKanan||0)),
+        el("td", { class: "mono", style: b.keluarFullscreen ? "color:var(--red)" : "" }, String(b.keluarFullscreen||0))
+      ));
+    });
+    tbl.appendChild(tbody);
+    container.appendChild(el("div", { class: "card", style: "overflow:auto; padding:0;" }, tbl));
+
+    container.appendChild(el("div", { class: "warn-box", style: "margin-top:16px;" },
+      el("span", {}, "⚠"),
+      el("p", { style: "margin:0;" }, "Kolom kecurangan mendeteksi pindah tab/aplikasi lain, copy, paste, klik kanan, dan keluar dari mode layar penuh (murid akan diminta kembali ke layar penuh sebelum bisa lanjut mengerjakan). Layar murid juga diberi watermark nama & kelasnya, jadi kalau ada tangkapan layar yang beredar, sumbernya bisa dikenali. Tangkapan layar itu sendiri tidak selalu bisa terdeteksi oleh browser, terutama di HP.")
+    ));
+  }
+
+  muat();
+  timer = setInterval(muat, 4000);
+}
+
+/* =========================================================
+   7b) GURU — ANALITIK BUTIR SOAL
+   Membantu guru mengidentifikasi soal yang paling banyak disalahkan
+   (kemungkinan materi yang perlu diulang) dan siswa yang paling
+   kesulitan (skor terendah) — dibaca HANYA saat halaman ini dibuka
+   (opt-in), bukan bagian dari pemuatan dashboard biasa.
+   ========================================================= */
+function halamanAnalitikSoal(code, assessment, baris, kembali) {
+  const container = el("div", { class: "wrap" });
+  render(container);
+  container.appendChild(el("p", { class: "muted" }, "Memuat analitik…"));
+
+  panggilAPI("getAnalitikSoal", { code }).then((hasil) => {
+    container.innerHTML = "";
+    container.appendChild(el("div", { class: "row no-cetak", style: "margin-bottom:20px; justify-content:space-between; flex-wrap:wrap; gap:8px;" },
+      el("button", { class: "btn", onclick: kembali }, "← Kembali ke Dashboard"),
+      hasil.ok && hasil.totalSiswaSelesai > 0
+        ? el("div", { class: "row", style: "gap:8px;" },
+            el("button", { class: "btn", onclick: () => eksporAnalitikExcel_(assessment, hasil, baris) }, "📊 Ekspor Excel"),
+            el("button", { class: "btn", onclick: () => window.print() }, "📄 Ekspor PDF")
+          )
+        : el("span")
+    ));
+    const areaCetak = el("div", { class: "area-cetak" });
+    container.appendChild(areaCetak);
+
+    if (!hasil.ok) {
+      areaCetak.appendChild(el("p", {}, hasil.error || "Gagal memuat analitik."));
+      return;
+    }
+
+    areaCetak.appendChild(el("h2", { class: "disp", style: "margin:0 0 4px;" }, `Analitik: ${assessment.mapel}`));
+    areaCetak.appendChild(el("p", { class: "muted", style: "font-size:.85em; margin-bottom:20px;" },
+      hasil.totalSiswaSelesai > 0
+        ? `Berdasarkan ${hasil.totalSiswaSelesai} siswa yang sudah menyelesaikan asesmen ini.`
+        : "Belum ada siswa yang menyelesaikan asesmen ini — analitik akan muncul begitu ada yang mengumpulkan jawaban."
+    ));
+
+    if (hasil.totalSiswaSelesai > 0) {
+      const soalSulit = hasil.soal.filter((s) => s.persenBenar !== null && s.persenBenar < 50);
+      if (soalSulit.length) {
+        areaCetak.appendChild(el("div", { class: "warn-box", style: "margin-bottom:20px; background:var(--red-soft); border-color:var(--red);" },
+          el("span", {}, "⚠"),
+          el("p", { style: "margin:0;" },
+            `${soalSulit.length} dari ${hasil.soal.length} soal punya tingkat kebenaran di bawah 50% — kemungkinan materinya perlu diulang atau soalnya perlu ditinjau ulang (mis. kurang jelas/terlalu sulit).`
+          )
+        ));
+      }
+
+      // --- Panel: butir soal, diurutkan dari yang paling banyak disalahkan ---
+      areaCetak.appendChild(el("h3", { class: "disp", style: "font-size:1.05em; margin-bottom:10px;" }, "Tingkat Kebenaran per Soal"));
+      const TIPE_LABEL = { pg: "Pilihan Ganda", pgk: "PG Kompleks", bs: "Benar-Salah", tbs: "Tabel Benar-Salah" };
+      const daftarSoal = el("div", { style: "margin-bottom:24px;" });
+      hasil.soal.forEach((s, urutan) => {
+        const persen = s.persenBenar;
+        const warna = persen === null ? "var(--ink-soft)" : persen < 40 ? "var(--red)" : persen < 70 ? "var(--gold)" : "var(--green)";
+        const teksSingkat = String(s.teks || "").replace(/\n+/g, " ").slice(0, 110) + (String(s.teks || "").length > 110 ? "…" : "");
+        daftarSoal.appendChild(el("div", { class: "card", style: "padding:14px 16px; margin-bottom:10px;" },
+          el("div", { class: "between", style: "margin-bottom:8px; gap:10px;" },
+            el("div", { style: "min-width:0;" },
+              el("span", { class: "stamp", style: "color:var(--ink-soft); margin-right:6px;" }, TIPE_LABEL[s.tipe] || s.tipe),
+              el("span", { class: "muted", style: "font-size:.72em;" }, `${s.bobot} poin`),
+              el("p", { style: "margin:4px 0 0; font-size:.9em;" }, teksSingkat || "(soal tanpa teks)")
+            ),
+            el("div", { style: `text-align:right; flex-shrink:0;` },
+              el("div", { class: "disp", style: `font-size:1.3em; color:${warna};` }, persen === null ? "—" : `${persen}%`),
+              el("div", { class: "muted", style: "font-size:.7em;" }, "benar")
+            )
+          ),
+          el("div", { style: "height:8px; background:var(--paper); border-radius:99px; overflow:hidden; margin-bottom:8px;" },
+            el("div", { style: `height:100%; width:${persen ?? 0}%; background:${warna}; border-radius:99px;` })
+          ),
+          el("div", { class: "muted", style: "font-size:.72em;" },
+            s.tipe === "tbs"
+              ? `${s.benar} benar semua · ${s.sebagian} sebagian benar · ${s.salah} salah semua (dari ${s.dijawab} siswa)`
+              : `${s.benar} benar · ${s.salah} salah (dari ${s.dijawab} siswa)`
+          )
+        ));
+      });
+      areaCetak.appendChild(daftarSoal);
+
+      // --- Panel: siswa dengan skor terendah (dari data yang sudah ada, tidak perlu fetch lagi) ---
+      const selesai = (baris || []).filter((b) => b.status === "Selesai");
+      if (selesai.length) {
+        const terendah = selesai.slice().sort((a2, b2) => a2.skor - b2.skor).slice(0, 5);
+        areaCetak.appendChild(el("h3", { class: "disp", style: "font-size:1.05em; margin-bottom:10px;" }, "Siswa dengan Skor Terendah"));
+        const tbl2 = el("table", {},
+          el("tr", {}, el("th", {}, "Nama"), el("th", {}, "Kelas"), el("th", { style: "text-align:right;" }, "Skor"))
+        );
+        terendah.forEach((b) => {
+          tbl2.appendChild(el("tr", {},
+            el("td", { style: "font-weight:600;" }, b.nama),
+            el("td", {}, b.kelas),
+            el("td", { class: "mono", style: "text-align:right;" }, `${b.skor}/${assessment.totalBobot}`)
+          ));
+        });
+        areaCetak.appendChild(el("div", { class: "card", style: "overflow:auto; padding:0;" }, tbl2));
+      }
+    }
+  });
+}
+
+/** Ekspor .xlsx dari data analitik yang sudah dimuat (client-side, tanpa
+ * perlu panggilan server tambahan) — dua sheet: rincian per soal, dan
+ * daftar LENGKAP semua siswa (bukan cuma 5 terendah, supaya guru punya
+ * arsip nilai penuh kalau perlu). Memakai library XLSX yang sudah dimuat
+ * di halaman ini (dipakai juga oleh fitur impor daftar siswa). */
+function eksporAnalitikExcel_(assessment, hasilAnalitik, baris) {
+  if (typeof XLSX === "undefined") {
+    alert("Gagal memuat komponen Excel — periksa koneksi internetmu, lalu coba lagi.");
+    return;
+  }
+  const TIPE_LABEL = { pg: "Pilihan Ganda", pgk: "PG Kompleks", bs: "Benar-Salah", tbs: "Tabel Benar-Salah" };
+
+  const dataSoal = [["No", "Tipe Soal", "Bobot", "Persen Benar", "Benar Semua", "Sebagian Benar", "Salah Semua", "Jumlah Dijawab", "Teks Soal"]];
+  hasilAnalitik.soal.forEach((s, i) => {
+    dataSoal.push([
+      i + 1, TIPE_LABEL[s.tipe] || s.tipe, s.bobot,
+      s.persenBenar === null ? "-" : `${s.persenBenar}%`,
+      s.benar, s.sebagian, s.salah, s.dijawab,
+      String(s.teks || "").replace(/\n+/g, " "),
+    ]);
+  });
+
+  const dataSiswa = [["Nama", "Kelas", "Status", "Skor", "Total Bobot"]];
+  (baris || []).slice()
+    .sort((a, b) => (a.status === "Selesai" ? a.skor : Infinity) - (b.status === "Selesai" ? b.skor : Infinity))
+    .forEach((b) => {
+      dataSiswa.push([b.nama, b.kelas, b.status, b.status === "Selesai" ? b.skor : "-", assessment.totalBobot]);
+    });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataSoal), "Analitik Soal");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dataSiswa), "Semua Siswa");
+  const namaFile = `Analitik - ${assessment.mapel} - ${new Date().toISOString().slice(0, 10)}.xlsx`.replace(/[\\/:*?"<>|]/g, "-");
+  XLSX.writeFile(wb, namaFile);
+}
+
+/* =========================================================
+   8) MURID — MASUK
+   ========================================================= */
+function halamanMuridMasuk() {
+  let assessment = null;
+  const kodeInput = el("input", { class: "mono", style: "text-align:center; font-size:1.3em; letter-spacing:.2em;", maxlength: "6", placeholder: "A1B2C3" });
+  const errNode = el("p", { style: "color:var(--red); font-size:.85em;" });
+  const bodyArea = el("div", { style: "text-align:left;" });
+
+  function gambarCari() {
+    bodyArea.innerHTML = "";
+    bodyArea.appendChild(el("label", { class: "field" }, "Kode Asesmen"));
+    bodyArea.appendChild(el("div", { class: "gerbang-field", style: "margin-bottom:10px;" }, ikonEl(IKON.tiket, ""), kodeInput));
+    bodyArea.appendChild(errNode);
+    const tombol = el("button", { class: "btn btn-red btn-block", onclick: async () => {
+      const kode = kodeInput.value.trim().toUpperCase();
+      if (!kode) return;
+      tombol.disabled = true; tombol.textContent = "Mencari…";
+      const hasil = await panggilAPI("getStudentAssessment", { code: kode });
+      tombol.disabled = false; tombol.textContent = "Cari Asesmen";
+      if (!hasil.ok) { errNode.textContent = hasil.error; return; }
+      assessment = { ...hasil, code: kode };
+      gambarPilihNama();
+    }}, "Cari Asesmen");
+    bodyArea.appendChild(tombol);
+  }
+
+  function gambarPilihNama() {
+    bodyArea.innerHTML = "";
+    bodyArea.appendChild(el("div", { style: "background:var(--paper); border-radius:5px; padding:12px 14px; margin-bottom:16px;" },
+      el("div", { class: "row", style: "gap:.5em; align-items:baseline;" },
+        el("div", { class: "disp", style: "font-size:1.2em;" }, assessment.mapel),
+        assessment.jenjang ? el("span", { class: "stamp", style: "color:var(--ink-soft);" }, `Kelas ${assessment.jenjang}`) : el("span")
+      ),
+      el("div", { class: "muted", style: "font-size:.8em;" }, `${assessment.soal.length} soal · ${assessment.waktuMenit} menit`)
+    ));
+
+    const kelasUnik = [...new Set(assessment.siswa.map(s => s.kelas))];
+
+    bodyArea.appendChild(el("label", { class: "field" }, "Pilih Kelas"));
+    const kelasSelect = el("select", { style: "margin-bottom:14px;" });
+    kelasUnik.forEach(k => kelasSelect.appendChild(el("option", { value: k }, k)));
+    bodyArea.appendChild(kelasSelect);
+
+    bodyArea.appendChild(el("label", { class: "field" }, "Pilih Namamu"));
+    const namaSelect = el("select", { style: "margin-bottom:18px;" });
+    function gambarNamaSelect() {
+      namaSelect.innerHTML = "";
+      assessment.siswa
+        .filter(s => s.kelas === kelasSelect.value)
+        .forEach(s => namaSelect.appendChild(el("option", { value: s.id }, s.nama)));
+    }
+    gambarNamaSelect();
+    kelasSelect.addEventListener("change", gambarNamaSelect);
+    bodyArea.appendChild(namaSelect);
+
+    bodyArea.appendChild(el("button", { class: "btn btn-red btn-block", onclick: () => { masukLayarPenuh(); halamanMuridKerjakan(assessment, namaSelect.value); } }, "Mulai Mengerjakan"));
+  }
+
+  gambarCari();
+
+  render(
+    el("div", { class: "center" },
+      el("div", { class: "card gerbang-card" },
+        el("div", { class: "gerbang-back" }, el("button", { class: "btn", onclick: halamanBeranda }, "← Kembali")),
+        ikonEl(IKON.murid, "gerbang-badge"),
+        el("h2", { class: "disp gerbang-title" }, "Masuk Asesmen"),
+        el("p", { class: "gerbang-subtitle" }, "Masukkan kode dari gurumu."),
+        bodyArea
+      )
+    )
+  );
+}
+
+/* =========================================================
+   9) MURID — MENGERJAKAN (dengan deteksi kecurangan)
+   ========================================================= */
+function halamanMuridKerjakan(assessment, siswaId) {
+  const siswa = assessment.siswa.find(s => s.id === siswaId);
+  let state = null;   // { urutanSoal, urutanOpsi, jawaban, mulai }
+  let sisaMs = null;
+  let sudahSubmit = false;
+  let timerInterval = null;
+  let lastCheat = {};
+
+  /* =========================================================
+     PENYIMPANAN JAWABAN — status per soal + coba ulang otomatis
+     ---------------------------------------------------------
+     Sebelumnya panggilAPI("saveAnswer", …) dipanggil tanpa ditunggu
+     (fire-and-forget): kalau koneksi terputus sesaat, jawaban yang
+     TERLIHAT sudah dipilih di layar murid TIDAK benar-benar tersimpan
+     di server — dan murid sama sekali tidak diberi tahu.
+
+     Sekarang setiap jawaban punya status: "menyimpan" → "tersimpan"
+     atau "gagal" (setelah 3x percobaan dengan jeda makin lama). Status
+     ini ditampilkan di soal yang sedang dibuka & di palet nomor soal,
+     dan "Kumpulkan Jawaban" akan menolak submit otomatis kalau masih
+     ada status "menyimpan"/"gagal" yang belum beres.
+     ========================================================= */
+  const statusSimpan = {};   // soalId -> "menyimpan" | "tersimpan" | "gagal"
+  const versiSimpan = {};    // soalId -> nomor percobaan terbaru (cegah balapan)
+
+  function tunggu_(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+  async function simpanJawabanKeServer(soalId, pilihan) {
+    const versi = (versiSimpan[soalId] = (versiSimpan[soalId] || 0) + 1);
+    statusSimpan[soalId] = "menyimpan";
+    gambarSoal();
+    const JEDA_MS = [1200, 2500, 4500]; // 3 kali percobaan dengan jeda makin lama
+    for (let percobaan = 0; percobaan <= JEDA_MS.length; percobaan++) {
+      try {
+        const hasil = await panggilAPI("saveAnswer", { code: assessment.code, siswaId, soalId, pilihan });
+        if (!hasil || !hasil.ok) throw new Error((hasil && hasil.error) || "Server menolak jawaban.");
+        if (versiSimpan[soalId] === versi) { statusSimpan[soalId] = "tersimpan"; gambarSoal(); }
+        return;
+      } catch (err) {
+        if (percobaan < JEDA_MS.length) { await tunggu_(JEDA_MS[percobaan]); continue; }
+        if (versiSimpan[soalId] === versi) { statusSimpan[soalId] = "gagal"; gambarSoal(); }
+      }
+    }
+  }
+
+  window.addEventListener("beforeunload", (e) => {
+    if (sudahSubmit) return;
+    const adaYangBelumAman = Object.values(statusSimpan).some((s) => s === "menyimpan" || s === "gagal");
+    if (adaYangBelumAman) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  const rootNode = el("div", {});
+  render(rootNode, { noHeader: true }); // sedang ujian (mode fullscreen) — pakai .examhead sendiri, bukan header portal
+
+  function catatKecurangan(tipe) {
+    const now = Date.now();
+    if (lastCheat[tipe] && now - lastCheat[tipe] < 800) return;
+    lastCheat[tipe] = now;
+    panggilAPI("logCheat", { code: assessment.code, siswaId, tipe });
+  }
+
+  document.addEventListener("visibilitychange", () => { if (document.hidden && !sudahSubmit) catatKecurangan("tab"); });
+  document.addEventListener("copy", () => !sudahSubmit && catatKecurangan("copy"));
+  document.addEventListener("paste", () => !sudahSubmit && catatKecurangan("paste"));
+  document.addEventListener("contextmenu", (e) => { if (!sudahSubmit) { e.preventDefault(); catatKecurangan("klikKanan"); } });
+
+  /* --- Watermark nama murid (tampak di layar & di tangkapan layar) --- */
+  let watermarkEl = null;
+  function pasangWatermark() {
+    if (watermarkEl || !siswa) return;
+    const teks = siswa.kelas ? `${siswa.nama} · ${siswa.kelas}` : siswa.nama;
+    watermarkEl = el("div", {
+      style: `position:fixed; inset:0; z-index:40; pointer-events:none; background-image:url('${buatWatermarkDataUrl(teks)}'); background-repeat:repeat;`,
+    });
+    document.body.appendChild(watermarkEl);
+  }
+  function lepasWatermark() {
+    if (watermarkEl) { watermarkEl.remove(); watermarkEl = null; }
+  }
+
+  /* --- Overlay: paksa kembali ke layar penuh sebelum lanjut --- */
+  const overlayFullscreen = el("div", {
+    style: "position:fixed; inset:0; z-index:9999; background:rgba(27,42,74,0.95); display:none; align-items:center; justify-content:center; padding:24px; text-align:center;",
+  });
+  document.body.appendChild(overlayFullscreen);
+
+  function tampilkanOverlayFullscreen() {
+    overlayFullscreen.innerHTML = "";
+    overlayFullscreen.style.display = "flex";
+    overlayFullscreen.appendChild(el("div", { style: "max-width:380px;" },
+      el("div", { style: "font-size:2.4em; margin-bottom:12px;" }, "⛶"),
+      el("h2", { class: "disp", style: "color:white; margin:0 0 8px;" }, "Kembali ke Layar Penuh"),
+      el("p", { style: "color:rgba(255,255,255,.78); font-size:.9em; margin-bottom:22px;" },
+        "Kamu keluar dari mode layar penuh. Kejadian ini sudah tercatat untuk gurumu. Klik tombol di bawah untuk melanjutkan mengerjakan."),
+      el("button", { class: "btn btn-red", onclick: () => masukLayarPenuh() }, "Lanjutkan Mengerjakan")
+    ));
+  }
+  function sembunyikanOverlayFullscreen() {
+    overlayFullscreen.style.display = "none";
+  }
+
+  function onFullscreenChange() {
+    const sedangFull = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    if (sudahSubmit) return;
+    if (sedangFull) {
+      sembunyikanOverlayFullscreen();
+    } else {
+      catatKecurangan("keluarFullscreen");
+      tampilkanOverlayFullscreen();
+    }
+  }
+  document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+
+  async function mulai() {
+    let hasil;
+    try {
+      hasil = await panggilAPI("startOrResume", { code: assessment.code, siswaId });
+    } catch (err) {
+      rootNode.appendChild(el("div", { class: "center" },
+        el("div", { class: "card", style: "max-width:380px; text-align:center;" },
+          el("p", {}, "Gagal terhubung ke server. Periksa koneksi internetmu, lalu coba lagi."),
+          el("button", { class: "btn btn-red", onclick: () => { rootNode.innerHTML = ""; mulai(); } }, "Coba Lagi")
+        )
+      ));
+      return;
+    }
+    if (!hasil.ok) {
+      rootNode.appendChild(el("div", { class: "center" }, el("p", {}, hasil.error)));
+      return;
+    }
+    if (hasil.sudahSelesai) {
+      tampilkanSelesai();
+      return;
+    }
+    state = { urutanSoal: hasil.urutanSoal, urutanOpsi: hasil.urutanOpsi, jawaban: hasil.jawaban || {}, mulai: hasil.mulai };
+    pasangWatermark();
+    gambarSoal();
+    timerInterval = setInterval(hitungWaktu, 1000);
+    hitungWaktu();
+  }
+
+  function hitungWaktu() {
+    const batas = assessment.waktuMenit * 60000;
+    sisaMs = batas - (Date.now() - state.mulai);
+    const el2 = document.getElementById("ak-timer");
+    if (el2) {
+      el2.textContent = fmtWaktu(sisaMs);
+      el2.style.background = sisaMs <= 15000 ? "var(--red)" : "var(--blue)";
+    }
+    if (sisaMs <= 0 && !sudahSubmit) { kumpulkan(true); }
+  }
+
+  async function pilihJawabanTunggal(soalId, idxAsli) {
+    state.jawaban[soalId] = idxAsli;
+    gambarSoal();
+    simpanJawabanKeServer(soalId, idxAsli);
+  }
+
+  async function pilihJawabanKompleks(soalId, idxAsli) {
+    const sudahAda = Array.isArray(state.jawaban[soalId]) ? state.jawaban[soalId] : [];
+    const ada = sudahAda.includes(idxAsli);
+    const baru = ada ? sudahAda.filter((v) => v !== idxAsli) : [...sudahAda, idxAsli];
+    state.jawaban[soalId] = baru;
+    gambarSoal();
+    simpanJawabanKeServer(soalId, baru);
+  }
+
+  // Tipe "tbs" (Tabel Benar-Salah): jawaban berupa array boolean/null sepanjang
+  // jumlah pernyataan — satu entri per baris pernyataan, independen satu sama lain.
+  async function pilihJawabanMatriks(soalId, jumlahPernyataan, idxPernyataan, nilai) {
+    const sudahAda = Array.isArray(state.jawaban[soalId]) ? state.jawaban[soalId].slice() : new Array(jumlahPernyataan).fill(null);
+    sudahAda[idxPernyataan] = nilai;
+    state.jawaban[soalId] = sudahAda;
+    gambarSoal();
+    simpanJawabanKeServer(soalId, sudahAda);
+  }
+
+  async function kumpulkan(otomatis) {
+    if (sudahSubmit) return;
+
+    // Kalau guru mengaktifkan "wajib jawab semua soal", cegah pengumpulan
+    // MANUAL selagi masih ada yang kosong — dicek di sini dulu (lebih cepat,
+    // langsung kasih tahu berapa yang kurang) SEBELUM ke server; server
+    // (finish_) tetap memvalidasi ulang sebagai jaring pengaman kedua.
+    // Pengumpulan OTOMATIS (waktu habis) selalu diloloskan tanpa syarat ini.
+    if (assessment.wajibLengkap && !otomatis) {
+      const totalSoal = state.urutanSoal.length;
+      const terjawab = state.urutanSoal.filter(soalTerjawab_).length;
+      if (terjawab < totalSoal) {
+        alert(`Masih ada ${totalSoal - terjawab} dari ${totalSoal} soal yang belum dijawab.\n\nJawab semua soal dulu sebelum bisa mengumpulkan.`);
+        return;
+      }
+    }
+
+    const belumAman = Object.keys(statusSimpan).filter((id) => statusSimpan[id] === "menyimpan" || statusSimpan[id] === "gagal");
+    if (!otomatis && belumAman.length) {
+      const mauCoba = confirm(
+        `Masih ada ${belumAman.length} jawaban yang belum berhasil tersimpan ke server (kemungkinan koneksi internetmu sedang bermasalah).\n\n` +
+        `Klik OK untuk mencoba menyimpannya lagi sekarang, atau Batal untuk memeriksa koneksimu dulu sebelum mengumpulkan.`
+      );
+      if (mauCoba) belumAman.forEach((id) => simpanJawabanKeServer(id, state.jawaban[id]));
+      return;
+    }
+
+    if (!otomatis && !confirm("Kumpulkan jawaban sekarang? Kamu tidak bisa mengubahnya lagi setelah ini.")) return;
+
+    sudahSubmit = true;
+    clearInterval(timerInterval);
+    keluarLayarPenuh();
+    try {
+      const hasil = await panggilAPI("finish", { code: assessment.code, siswaId, paksa: otomatis });
+      if (!hasil || !hasil.ok) throw new Error((hasil && hasil.error) || "Server menolak permintaan kumpulkan jawaban.");
+      tampilkanSelesai();
+    } catch (err) {
+      sudahSubmit = false; // izinkan murid mencoba kumpulkan lagi
+      alert("Gagal mengumpulkan jawaban — periksa koneksi internetmu, lalu tekan tombol \"Kumpulkan Jawaban\" sekali lagi.\n\n(" + (err && err.message ? err.message : err) + ")");
+      gambarSoal();
+    }
+  }
+
+  function tampilkanSelesai() {
+    // Skor SENGAJA tidak ditampilkan di layar ini — murid tidak diberi tahu
+    // nilainya sendiri lewat halaman ini. Skor hanya bisa dilihat guru lewat
+    // dashboard hasil, atau diumumkan lewat cara lain sesuai kebijakan guru.
+    lepasWatermark();
+    sembunyikanOverlayFullscreen();
+    overlayFullscreen.remove();
+    rootNode.innerHTML = "";
+    rootNode.appendChild(el("div", { class: "center" },
+      el("div", { class: "card", style: "max-width:420px; text-align:center;" },
+        el("div", { style: "font-size:2em; color:var(--green);" }, "✓"),
+        el("h2", { class: "disp" }, "Jawaban Terkumpul"),
+        el("p", { class: "muted", style: "font-size:.9em; margin-bottom:8px;" }, `Terima kasih, ${siswa.nama}. Jawabanmu untuk ${assessment.mapel} sudah tersimpan.`),
+        el("p", { class: "muted", style: "font-size:.8em; margin-bottom:20px;" }, "Hasil/skor akan disampaikan oleh gurumu, bukan ditampilkan di halaman ini."),
+        el("button", { class: "btn", onclick: halamanBeranda }, "Selesai")
+      )
+    ));
+  }
+
+  let soalAktif = 0; // indeks di dalam state.urutanSoal — layar murid: satu soal per halaman (gaya CBT)
+  let drawerTerbuka = false;
+
+  function soalTerjawab_(soalId) {
+    const s = soalById(soalId);
+    const j = state.jawaban[soalId];
+    if (!s) return false;
+    if (s.tipe === "pgk") return Array.isArray(j) && j.length > 0;
+    if (s.tipe === "tbs") {
+      const n = (s.pernyataan || []).length;
+      return n > 0 && Array.isArray(j) && j.length === n && j.every((v) => v === true || v === false);
+    }
+    return j !== undefined && j !== null;
+  }
+  function soalById(id) {
+    return Object.fromEntries(assessment.soal.map(s => [s.id, s]))[id];
+  }
+
+  function gambarSoal() {
+    rootNode.innerHTML = "";
+    rootNode.style.userSelect = "none";
+    rootNode.style.paddingBottom = "80px";
+
+    rootNode.appendChild(el("div", { class: "examhead" },
+      el("div", { class: "examhead-top" },
+        elTombolTogglSoal(() => { drawerTerbuka = !drawerTerbuka; gambarSoal(); }),
+        el("img", { src: LOGO_SEKOLAH_B64, alt: "Logo Sekolah", class: "examhead-logo" }),
+        el("div", { class: "examhead-text" },
+          el("div", { class: "eyebrow" }, "Asesmen Sumatif"),
+          el("div", { class: "mapel" }, assessment.mapel || "—"),
+          el("div", { class: "siswa" }, `${siswa.nama} — ${siswa.kelas}`)
+        )
+      ),
+      el("div", { class: "timer-chip", id: "ak-timer" }, fmtWaktu(sisaMs ?? assessment.waktuMenit * 60000))
+    ));
+
+    const inner = el("div", { class: "wrap", style: "max-width:680px;" });
+    inner.appendChild(elBannerKatex());
+    const totalSoal = state.urutanSoal.length;
+    const terjawab = state.urutanSoal.filter(soalTerjawab_).length;
+
+    inner.appendChild(el("div", { class: "between muted", style: "font-size:.8em; margin-bottom:10px;" },
+      el("span", {}, `${terjawab} dari ${totalSoal} terjawab`),
+      el("span", {}, `Soal ${soalAktif + 1} dari ${totalSoal}${(() => { const s0 = soalById(state.urutanSoal[soalAktif]); return s0 ? ` · ${Number(s0.bobot) || 1} poin` : ""; })()}`)
+    ));
+
+    const soalId = state.urutanSoal[soalAktif];
+    const s = soalById(soalId);
+    if (s) {
+      const kompleks = s.tipe === "pgk";
+      const matriks = s.tipe === "tbs";
+      const urutanOpsi = matriks ? [] : (state.urutanOpsi[soalId] || s.opsi.map((_, i) => i));
+      const dipilih = state.jawaban[soalId];
+      const dipilihArr = kompleks ? (Array.isArray(dipilih) ? dipilih : []) : null;
+      const jumlahPernyataan = matriks ? (s.pernyataan || []).length : 0;
+      const dipilihMatriks = matriks ? (Array.isArray(dipilih) ? dipilih : new Array(jumlahPernyataan).fill(null)) : null;
+      const status = statusSimpan[soalId];
+      const badgeStatus =
+        status === "menyimpan" ? el("span", { class: "status-simpan menyimpan" }, "⏳ Menyimpan…") :
+        status === "gagal" ? el("span", {
+          class: "status-simpan gagal",
+          onclick: () => simpanJawabanKeServer(soalId, state.jawaban[soalId]),
+        }, "⚠️ Gagal tersimpan — klik untuk coba lagi") :
+        status === "tersimpan" ? el("span", { class: "status-simpan tersimpan" }, "✓ Tersimpan") :
+        el("span");
+      const qcard = el("div", { class: "qcard" },
+        el("div", { class: "row", style: "align-items:flex-start; margin-bottom:4px;" },
+          el("span", { class: "mono muted", style: "font-weight:600;" }, `${soalAktif+1}.`),
+          el("p", { style: "margin:0; font-weight:500; flex:1; min-width:0;", html: formatTeksKeHtml(s.teks) })
+        ),
+        elGambarDenganCadangan("gambar-soal", s, "margin-left:22px; max-width:calc(100% - 22px);"),
+        kompleks ? el("p", { class: "muted", style: "font-size:.75em; margin:0 0 6px 22px;" }, "Pilih satu atau lebih jawaban yang benar.") :
+          matriks ? el("p", { class: "muted", style: "font-size:.75em; margin:0 0 6px 22px;" }, "Tentukan BENAR atau SALAH untuk setiap pernyataan di bawah ini.") : el("span"),
+        el("div", { style: "margin:0 0 10px 22px;" }, badgeStatus)
+      );
+      if (matriks) {
+        const tabelWrap = el("div", { style: "overflow-x:auto; margin-left:22px;" });
+        const tabel = el("table", {},
+          el("tr", {},
+            el("th", {}, "Pernyataan"),
+            el("th", { style: "text-align:center; width:64px;" }, "BENAR"),
+            el("th", { style: "text-align:center; width:64px;" }, "SALAH")
+          )
+        );
+        (s.pernyataan || []).forEach((p, idx) => {
+          const nilai = dipilihMatriks[idx];
+          const radio = (aktif) => el("span", {
+            class: `radio ${aktif ? "pilih" : ""}`, style: "margin:0 auto; cursor:pointer;",
+          });
+          const selBenar = radio(nilai === true);
+          const selSalah = radio(nilai === false);
+          const tdBenar = el("td", { style: "text-align:center; cursor:pointer;", onclick: () => pilihJawabanMatriks(soalId, jumlahPernyataan, idx, true) }, selBenar);
+          const tdSalah = el("td", { style: "text-align:center; cursor:pointer;", onclick: () => pilihJawabanMatriks(soalId, jumlahPernyataan, idx, false) }, selSalah);
+          tabel.appendChild(el("tr", {},
+            el("td", { style: "white-space:normal; text-align:left;" }, el("span", { html: `${HURUF[idx]}. ${formatTeksKeHtml(p.teks)}` })),
+            tdBenar, tdSalah
+          ));
+        });
+        tabelWrap.appendChild(tabel);
+        qcard.appendChild(tabelWrap);
+      } else {
+        const opsiGrid = el("div", { style: "display:grid; gap:2px;" });
+        urutanOpsi.forEach((idxAsli, posisi) => {
+          const terpilih = kompleks ? dipilihArr.includes(idxAsli) : dipilih === idxAsli;
+          const opsiObj = normalisasiOpsiFE(s.opsi[idxAsli]);
+          const label = el("label", { class: `opsi ${terpilih ? "pilih" : ""}`, style: "align-items:flex-start;" },
+            el("span", { class: "opsi-letter" }, `${HURUF[posisi]}.`),
+            el("span", { class: `radio ${kompleks ? "kotak" : ""} ${terpilih ? "pilih" : ""}` }),
+            el("div", { style: "flex:1; min-width:0;" },
+              opsiObj.teks ? el("span", { class: "opsi-teks", html: formatTeksKeHtml(opsiObj.teks) }) : el("span"),
+              elGambarDenganCadangan("gambar-opsi", opsiObj)
+            )
+          );
+          label.addEventListener("click", () => kompleks ? pilihJawabanKompleks(soalId, idxAsli) : pilihJawabanTunggal(soalId, idxAsli));
+          opsiGrid.appendChild(label);
+        });
+        qcard.appendChild(opsiGrid);
+      }
+      inner.appendChild(qcard);
+      renderMatematika(qcard);
+    }
+
+    inner.appendChild(el("div", { class: "navseg", style: "margin-bottom:14px;" },
+      el("button", { disabled: soalAktif === 0 ? "true" : null, onclick: () => { soalAktif--; gambarSoal(); } },
+        el("span", {}, "←"), el("span", {}, "Sebelumnya")),
+      el("button", { disabled: soalAktif === totalSoal - 1 ? "true" : null, onclick: () => { soalAktif++; gambarSoal(); } },
+        el("span", {}, "Berikutnya"), el("span", {}, "→"))
+    ));
+    inner.appendChild(el("button", { class: "btn btn-red btn-block", onclick: () => kumpulkan(false) }, "Kumpulkan Jawaban"));
+    if (assessment.wajibLengkap) {
+      const totalSoal2 = state.urutanSoal.length;
+      const terjawab2 = state.urutanSoal.filter(soalTerjawab_).length;
+      inner.appendChild(el("p", { class: "muted", style: "font-size:.75em; text-align:center; margin-top:8px;" },
+        terjawab2 < totalSoal2
+          ? `⚠ Semua soal wajib dijawab dulu (${terjawab2}/${totalSoal2} terjawab) sebelum bisa mengumpulkan.`
+          : "✓ Semua soal sudah terjawab, siap dikumpulkan."
+      ));
+    }
+
+    rootNode.appendChild(inner);
+
+    const { overlay, drawer } = elDrawerNomorSoal({
+      jumlah: totalSoal,
+      terjawabFn: (i) => soalTerjawab_(state.urutanSoal[i]),
+      statusFn: (i) => statusSimpan[state.urutanSoal[i]],
+      aktifIndex: soalAktif,
+      onPilih: (i) => { soalAktif = i; drawerTerbuka = false; gambarSoal(); },
+      terbuka: drawerTerbuka,
+      onTutup: () => { drawerTerbuka = false; gambarSoal(); },
+      tombolBawah: el("button", { class: "btn btn-red btn-block", onclick: () => kumpulkan(false) }, "✅ Kirim Jawaban"),
+    });
+    rootNode.appendChild(overlay);
+    rootNode.appendChild(drawer);
+  }
+
+  mulai();
+}
+
+/* =========================================================
+   10) MULAI
+   ========================================================= */
+if (cekKonfigurasi()) halamanBeranda();
+</script>
+</body>
+</html>
